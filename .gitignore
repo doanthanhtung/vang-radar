@@ -1,0 +1,22 @@
+node_modules
+.pnpm-store
+.turbo
+.next
+dist
+coverage
+.env
+*.log
+output
+
+# Local tooling / IDE artifacts
+.codegraph
+.understand-anything
+.playwright-cli
+agent-tools
+mcps
+
+packages/db/prisma/generated
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+apps/api/test-results
+apps/web/.next

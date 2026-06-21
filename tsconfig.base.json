@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vang-radar/config": ["packages/config/src/index.ts"],
+      "@vang-radar/db": ["packages/db/src/index.ts"],
+      "@vang-radar/domain": ["packages/domain/src/index.ts"],
+      "@vang-radar/logger": ["packages/logger/src/index.ts"]
+    }
+  }
+}

@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vangradar
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vangradar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: node:22-alpine
+    profiles: ["app"]
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile --ignore-scripts && pnpm db:generate && pnpm --filter @vang-radar/api dev"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vangradar
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+    volumes:
+      - ..:/app
+      - root_node_modules:/app/node_modules
+      - api_node_modules:/app/apps/api/node_modules
+      - db_node_modules:/app/packages/db/node_modules
+      - domain_node_modules:/app/packages/domain/node_modules
+      - config_node_modules:/app/packages/config/node_modules
+      - logger_node_modules:/app/packages/logger/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: node:22-alpine
+    profiles: ["app"]
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile --ignore-scripts && pnpm db:generate && pnpm --filter @vang-radar/worker dev"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vangradar
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ..:/app
+      - root_node_modules:/app/node_modules
+      - worker_node_modules:/app/apps/worker/node_modules
+      - db_node_modules:/app/packages/db/node_modules
+      - domain_node_modules:/app/packages/domain/node_modules
+      - config_node_modules:/app/packages/config/node_modules
+      - logger_node_modules:/app/packages/logger/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: node:22-alpine
+    profiles: ["app"]
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install --frozen-lockfile --ignore-scripts && pnpm db:generate && pnpm --filter @vang-radar/web dev"
+    env_file:
+      - ../.env
+    environment:
+      PUBLIC_API_BASE_URL: http://api:4000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ..:/app
+      - root_node_modules:/app/node_modules
+      - web_node_modules:/app/apps/web/node_modules
+      - domain_node_modules:/app/packages/domain/node_modules
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  root_node_modules:
+  api_node_modules:
+  worker_node_modules:
+  web_node_modules:
+  db_node_modules:
+  domain_node_modules:
+  config_node_modules:
+  logger_node_modules:

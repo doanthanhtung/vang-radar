@@ -1,0 +1,268 @@
+"use client";
+
+import { ChevronDown, ChevronUp, ArrowDown, ArrowUp, CircleHelp } from "lucide-react";
+import { useState } from "react";
+import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
+import { getGoldPriceHistory } from "../../lib/api-client";
+import { formatPercent, formatVnd } from "../../lib/utils";
+import { Table, Td, Th } from "../../components/ui/table";
+import { DailyPriceHistory } from "./daily-price-history";
+
+type HistoryState =
+  | { status: "loading" }
+  | { status: "success"; data: GoldPriceHistory }
+  | { status: "error"; message: string };
+
+export function ProductTable({ products }: { products: MarketSummaryProduct[] }) {
+  const [expandedCode, setExpandedCode] = useState<string | null>(null);
+  const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
+
+  const toggleProduct = (code: string) => {
+    if (expandedCode === code) {
+      setExpandedCode(null);
+      return;
+    }
+    setExpandedCode(code);
+    if (historyByCode[code]) return;
+
+    setHistoryByCode((current) => ({ ...current, [code]: { status: "loading" } }));
+    void getGoldPriceHistory(code)
+      .then((data) =>
+        setHistoryByCode((current) => ({ ...current, [code]: { status: "success", data } }))
+      )
+      .catch(() =>
+        setHistoryByCode((current) => ({
+          ...current,
+          [code]: { status: "error", message: "Không thể tải dữ liệu lịch sử. Vui lòng thử lại." }
+        }))
+      );
+  };
+
+  const retryHistory = (code: string) => {
+    setHistoryByCode((current) => ({ ...current, [code]: { status: "loading" } }));
+    void getGoldPriceHistory(code)
+      .then((data) =>
+        setHistoryByCode((current) => ({ ...current, [code]: { status: "success", data } }))
+      )
+      .catch(() =>
+        setHistoryByCode((current) => ({
+          ...current,
+          [code]: { status: "error", message: "Không thể tải dữ liệu lịch sử. Vui lòng thử lại." }
+        }))
+      );
+  };
+
+  if (products.length === 0) {
+    return <div className="py-8 text-center text-sm text-muted">Chưa có dữ liệu giá thật.</div>;
+  }
+
+  return (
+    <>
+      <div className="space-y-2 md:hidden">
+        {products.map((product) => {
+          const isExpanded = expandedCode === product.code;
+          return (
+            <article
+              key={product.code}
+              className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel"
+            >
+              <button
+                type="button"
+                onClick={() => toggleProduct(product.code)}
+                aria-expanded={isExpanded}
+                className="w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">{product.name}</div>
+                    <div className="text-xs text-muted">{product.brand}</div>
+                  </div>
+                  <ExpandIcon expanded={isExpanded} />
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 text-sm">
+                  <ProductMetric
+                    label="Bán ra"
+                    value={
+                      <PriceWithChange
+                        price={product.sellPrice}
+                        previousClose={product.previousDayClose?.sellPriceVnd}
+                      />
+                    }
+                  />
+                  <ProductMetric label="Premium" value={formatPercent(product.premiumSellPct)} />
+                  <ProductMetric label="Spread" value={formatPercent(product.spreadPct)} />
+                </dl>
+              </button>
+              {isExpanded ? (
+                <div className="border-t border-border p-3">
+                  <HistoryContent
+                    state={historyByCode[product.code]}
+                    retry={() => retryHistory(product.code)}
+                  />
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-border bg-panel shadow-panel md:block">
+        <Table>
+          <thead className="bg-background/85">
+            <tr>
+              <Th>Sản phẩm</Th>
+              <Th>Bán ra</Th>
+              <Th><MetricLabel label="Premium" description="Mức giá bán trong nước cao hoặc thấp hơn giá thế giới quy đổi." /></Th>
+              <Th><MetricLabel label="Spread" description="Chênh lệch giữa giá mua vào và bán ra." /></Th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((product) => {
+              const isExpanded = expandedCode === product.code;
+              return (
+                <ProductRows
+                  key={product.code}
+                  product={product}
+                  expanded={isExpanded}
+                  state={historyByCode[product.code]}
+                  onToggle={() => toggleProduct(product.code)}
+                  onRetry={() => retryHistory(product.code)}
+                />
+              );
+            })}
+          </tbody>
+        </Table>
+      </div>
+    </>
+  );
+}
+
+function ProductRows({
+  product,
+  expanded,
+  state,
+  onToggle,
+  onRetry
+}: {
+  product: MarketSummaryProduct;
+  expanded: boolean;
+  state: HistoryState | undefined;
+  onToggle: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <>
+      <tr onClick={onToggle} className="cursor-pointer transition-colors hover:bg-white/[0.04]">
+        <Td>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
+            aria-expanded={expanded}
+            aria-controls={`price-history-${product.code}`}
+            className="flex w-full items-start gap-2 text-left"
+          >
+            <ExpandIcon expanded={expanded} />
+            <div>
+              <div className="font-medium text-foreground hover:text-gold">{product.name}</div>
+              <div className="text-xs text-muted">{product.brand}</div>
+            </div>
+          </button>
+        </Td>
+        <Td>
+          <PriceWithChange price={product.sellPrice} previousClose={product.previousDayClose?.sellPriceVnd} />
+        </Td>
+        <Td>
+          <MetricValue value={product.premiumSellPct} />
+        </Td>
+        <Td>
+          <MetricValue value={product.spreadPct} />
+        </Td>
+      </tr>
+      {expanded ? (
+        <tr id={`price-history-${product.code}`}>
+          <Td colSpan={4} className="bg-background/70 p-3">
+            <HistoryContent state={state} retry={onRetry} />
+          </Td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function HistoryContent({ state, retry }: { state: HistoryState | undefined; retry: () => void }) {
+  if (!state || state.status === "loading")
+    return (
+      <div className="h-72 animate-pulse rounded-lg bg-panel" aria-label="Đang tải lịch sử giá" />
+    );
+  if (state.status === "error")
+    return (
+      <div className="rounded-lg border border-caution/30 bg-caution/10 p-4 text-sm text-red-300">
+        {state.message}
+        <button type="button" onClick={retry} className="ml-2 font-medium underline">
+          Thử lại
+        </button>
+      </div>
+    );
+  return <DailyPriceHistory history={state.data} />;
+}
+
+function ExpandIcon({ expanded }: { expanded: boolean }) {
+  const Icon = expanded ? ChevronUp : ChevronDown;
+  return <Icon className="h-4 w-4 shrink-0 text-gold" aria-hidden />;
+}
+
+function ProductMetric({ label, value }: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-1 break-words font-medium text-foreground">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function PriceWithChange({ price, previousClose }: { price: number; previousClose: number | undefined }) {
+  const hasPreviousClose = typeof previousClose === "number" && Number.isFinite(previousClose);
+  const change = hasPreviousClose ? price - previousClose : 0;
+  const isUp = change > 0;
+  const isDown = change < 0;
+  const Icon = isUp ? ArrowUp : ArrowDown;
+  const color = isUp ? "text-positive" : isDown ? "text-red-400" : "text-muted";
+  return (
+    <div>
+      <div className="font-medium text-foreground">{formatVnd(price)}</div>
+      {hasPreviousClose ? (
+        <div className={`mt-1 flex items-center gap-0.5 text-[11px] font-medium ${color}`}>
+          {change !== 0 ? <Icon className="h-3 w-3" aria-hidden /> : null}
+          {change === 0
+            ? formatVnd(0)
+            : `${isUp ? "+" : "−"}${formatVnd(Math.abs(change))}`}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MetricValue({ value }: { value: number }) {
+  return (
+    <div className="font-medium text-foreground">{formatPercent(value)}</div>
+  );
+}
+
+function MetricLabel({ label, description }: { label: string; description: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {label}
+      <span title={description}>
+        <CircleHelp className="h-3.5 w-3.5 text-muted" aria-label={description} />
+      </span>
+    </span>
+  );
+}
