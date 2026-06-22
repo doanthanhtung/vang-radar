@@ -338,6 +338,8 @@ function FactorHistoryTable({
     return <p className="text-sm text-muted">Chưa có dữ liệu lịch sử.</p>;
   }
 
+  const newestFirstPoints = [...points].reverse();
+
   return (
     <div className="space-y-3">
       <FactorSparkline points={points} />
@@ -353,7 +355,7 @@ function FactorHistoryTable({
           </tr>
         </thead>
         <tbody>
-          {points.map((point) => (
+          {newestFirstPoints.map((point) => (
             <tr key={point.date} className="border-b border-border/50 last:border-b-0">
               <td className="px-3 py-2 text-muted">{formatHistoryDate(point.date)}</td>
               <td className="px-3 py-2 text-right font-medium text-foreground">
