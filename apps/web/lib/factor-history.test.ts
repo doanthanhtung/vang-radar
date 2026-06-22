@@ -16,12 +16,12 @@ describe("buildWorldGoldDailyHistory", () => {
     ]);
 
     expect(history).toHaveLength(2);
-    expect(history[0]?.date).toBe("2026-06-20");
-    expect(history[0]?.value).toBe(2320);
-    expect(history[0]?.change).toBeCloseTo(10);
-    expect(history[1]?.date).toBe("2026-06-19");
-    expect(history[1]?.value).toBe(2310);
-    expect(history[1]?.change).toBeNull();
+    expect(history[0]?.date).toBe("2026-06-19");
+    expect(history[0]?.value).toBe(2310);
+    expect(history[0]?.change).toBeNull();
+    expect(history[1]?.date).toBe("2026-06-20");
+    expect(history[1]?.value).toBe(2320);
+    expect(history[1]?.change).toBeCloseTo(10);
   });
 });
 
@@ -34,12 +34,12 @@ describe("buildFxDailyHistory", () => {
     ]);
 
     expect(history).toHaveLength(2);
-    expect(history[0]?.date).toBe("2026-06-20");
-    expect(history[0]?.value).toBe(26_120);
-    expect(history[0]?.change).toBe(70);
-    expect(history[1]?.date).toBe("2026-06-19");
-    expect(history[1]?.value).toBe(26_050);
-    expect(history[1]?.change).toBeNull();
+    expect(history[0]?.date).toBe("2026-06-19");
+    expect(history[0]?.value).toBe(26_050);
+    expect(history[0]?.change).toBeNull();
+    expect(history[1]?.date).toBe("2026-06-20");
+    expect(history[1]?.value).toBe(26_120);
+    expect(history[1]?.change).toBe(70);
   });
 });
 
@@ -47,19 +47,19 @@ describe("applyLiveTodayValue", () => {
   it("updates today's row with the latest live value", () => {
     const history = applyLiveTodayValue(
       [
-        { date: "2026-06-22", value: 2300, change: 10 },
-        { date: "2026-06-21", value: 2290, change: null }
+        { date: "2026-06-21", value: 2290, change: null },
+        { date: "2026-06-22", value: 2300, change: 10 }
       ],
       "2026-06-22",
       2315
     );
 
-    expect(history[0]?.value).toBe(2315);
-    expect(history[0]?.change).toBe(25);
-    expect(history[1]?.value).toBe(2290);
+    expect(history[0]?.value).toBe(2290);
+    expect(history[1]?.value).toBe(2315);
+    expect(history[1]?.change).toBe(25);
   });
 
-  it("prepends today when history only has previous days", () => {
+  it("appends today when history only has previous days", () => {
     const history = applyLiveTodayValue(
       [{ date: "2026-06-21", value: 2290, change: null }],
       "2026-06-22",
@@ -67,9 +67,10 @@ describe("applyLiveTodayValue", () => {
     );
 
     expect(history).toHaveLength(2);
-    expect(history[0]?.date).toBe("2026-06-22");
-    expect(history[0]?.value).toBe(2315);
-    expect(history[0]?.change).toBe(25);
+    expect(history[0]?.date).toBe("2026-06-21");
+    expect(history[1]?.date).toBe("2026-06-22");
+    expect(history[1]?.value).toBe(2315);
+    expect(history[1]?.change).toBe(25);
   });
 
   it("returns the original history when live value is missing", () => {
@@ -149,11 +150,11 @@ describe("buildAverageDailyGoldHistory", () => {
 
     const history = buildAverageDailyGoldHistory(histories, "premiumPercent");
 
-    expect(history[0]?.date).toBe("2026-06-20");
-    expect(history[0]?.value).toBeCloseTo(0.14);
-    expect(history[0]?.change).toBeCloseTo(0.05);
-    expect(history[1]?.date).toBe("2026-06-19");
-    expect(history[1]?.value).toBeCloseTo(0.09);
-    expect(history[1]?.change).toBeNull();
+    expect(history[0]?.date).toBe("2026-06-19");
+    expect(history[0]?.value).toBeCloseTo(0.09);
+    expect(history[0]?.change).toBeNull();
+    expect(history[1]?.date).toBe("2026-06-20");
+    expect(history[1]?.value).toBeCloseTo(0.14);
+    expect(history[1]?.change).toBeCloseTo(0.05);
   });
 });

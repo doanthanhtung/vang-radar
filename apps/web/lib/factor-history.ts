@@ -64,8 +64,7 @@ export function buildAverageDailyGoldHistory(
 function buildDailySeries(points: Array<{ date: string; value: number }>): FactorHistoryPoint[] {
   let previous: number | null = null;
 
-  return points
-    .map((point) => {
+  return points.map((point) => {
       const change = previous === null ? null : point.value - previous;
       previous = point.value;
       return {
@@ -73,8 +72,7 @@ function buildDailySeries(points: Array<{ date: string; value: number }>): Facto
         value: point.value,
         change
       };
-    })
-    .reverse();
+    });
 }
 
 export function applyLiveTodayValue(
@@ -90,15 +88,15 @@ export function applyLiveTodayValue(
     return [{ date: todayKey, value: liveValue, change: null }];
   }
 
-  const latest = points[0]!;
-  const rest = points.slice(1);
+  const latest = points[points.length - 1]!;
+  const previous = points[points.length - 2];
 
   if (latest.date === todayKey) {
-    const previousValue = rest[0]?.value ?? null;
+    const previousValue = previous?.value ?? null;
     const change = previousValue === null ? null : liveValue - previousValue;
-    return [{ date: todayKey, value: liveValue, change }, ...rest];
+    return [...points.slice(0, -1), { date: todayKey, value: liveValue, change }];
   }
 
   const change = liveValue - latest.value;
-  return [{ date: todayKey, value: liveValue, change }, ...points];
+  return [...points, { date: todayKey, value: liveValue, change }];
 }
