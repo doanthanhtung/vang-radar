@@ -43,8 +43,11 @@ export async function generateLatestSignals(prisma: PrismaClient) {
       spreadSampleSize180d: historicalMetricCount,
       xauMomentum7d: metric.xauMomentum7d === null ? null : Number(metric.xauMomentum7d),
       xauMomentum30d: metric.xauMomentum30d === null ? null : Number(metric.xauMomentum30d),
+      xauMomentum7dDays: metric.xauMomentum7dDays ?? null,
+      xauMomentum30dDays: metric.xauMomentum30dDays ?? null,
       domesticMomentum7d:
         metric.domesticMomentum7d === null ? null : Number(metric.domesticMomentum7d),
+      domesticMomentum7dDays: metric.domesticMomentum7dDays ?? null,
       dataQualityScore: 100,
       isDataValid: true
     });

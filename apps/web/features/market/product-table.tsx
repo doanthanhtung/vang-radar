@@ -6,6 +6,7 @@ import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-clien
 import { getGoldPriceHistory } from "../../lib/api-client";
 import { formatPercent, formatVnd } from "../../lib/utils";
 import { Table, Td, Th } from "../../components/ui/table";
+import { SignalBadge } from "./signal-badge";
 import { DailyPriceHistory } from "./daily-price-history";
 
 type HistoryState =
@@ -91,6 +92,7 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
                   />
                   <ProductMetric label="Premium" value={formatPercent(product.premiumSellPct)} />
                   <ProductMetric label="Spread" value={formatPercent(product.spreadPct)} />
+                  <ProductMetric label="Điểm" value={<ScoreValue product={product} />} />
                 </dl>
               </button>
               {isExpanded ? (
@@ -114,6 +116,7 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
               <Th>Bán ra</Th>
               <Th><MetricLabel label="Premium" description="Mức giá bán trong nước cao hoặc thấp hơn giá thế giới quy đổi." /></Th>
               <Th><MetricLabel label="Spread" description="Chênh lệch giữa giá mua vào và bán ra." /></Th>
+              <Th><MetricLabel label="Điểm" description="Điểm tín hiệu mua (0–100) và nhãn tín hiệu của từng sản phẩm." /></Th>
             </tr>
           </thead>
           <tbody>
@@ -180,10 +183,13 @@ function ProductRows({
         <Td>
           <MetricValue value={product.spreadPct} />
         </Td>
+        <Td>
+          <ScoreValue product={product} />
+        </Td>
       </tr>
       {expanded ? (
         <tr id={`price-history-${product.code}`}>
-          <Td colSpan={4} className="bg-background/70 p-3">
+          <Td colSpan={5} className="bg-background/70 p-3">
             <HistoryContent state={state} retry={onRetry} />
           </Td>
         </tr>
@@ -238,12 +244,10 @@ function PriceWithChange({ price, previousClose }: { price: number; previousClos
   return (
     <div>
       <div className="font-medium text-foreground">{formatVnd(price)}</div>
-      {hasPreviousClose ? (
+      {hasPreviousClose && change !== 0 ? (
         <div className={`mt-1 flex items-center gap-0.5 text-[11px] font-medium ${color}`}>
-          {change !== 0 ? <Icon className="h-3 w-3" aria-hidden /> : null}
-          {change === 0
-            ? formatVnd(0)
-            : `${isUp ? "+" : "−"}${formatVnd(Math.abs(change))}`}
+          <Icon className="h-3 w-3" aria-hidden />
+          {`${isUp ? "+" : "−"}${formatVnd(Math.abs(change))}`}
         </div>
       ) : null}
     </div>
@@ -253,6 +257,15 @@ function PriceWithChange({ price, previousClose }: { price: number; previousClos
 function MetricValue({ value }: { value: number }) {
   return (
     <div className="font-medium text-foreground">{formatPercent(value)}</div>
+  );
+}
+
+function ScoreValue({ product }: { product: MarketSummaryProduct }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="font-medium text-foreground">{product.score}/100</div>
+      <SignalBadge signal={product.signal} />
+    </div>
   );
 }
 

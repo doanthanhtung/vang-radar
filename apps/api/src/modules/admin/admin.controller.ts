@@ -59,9 +59,9 @@ export class AdminController {
   }
 
   @Get("access/today")
-  async getTodayAccess(@Req() request: AdminRequest) {
-    const result = await this.adminService.getTodayIpAccess();
-    await this.adminService.audit(request, "access_today.viewed");
+  async getTodayAccess(@Req() request: AdminRequest, @Query("audience") audience?: string) {
+    const result = await this.adminService.getTodayIpAccess(parseAudience(audience));
+    await this.adminService.audit(request, "access_today.viewed", { audience: result.audience });
     return result;
   }
 }
@@ -77,4 +77,9 @@ function numberQuery(value?: string): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseAudience(value?: string): "human" | "bot" | "all" {
+  if (value === "bot" || value === "all") return value;
+  return "human";
 }

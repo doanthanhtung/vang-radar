@@ -1,21 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleHelp } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleHelp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import type { MarketSummary, WorldGoldHistoryPoint } from "../../lib/api-client";
-import { getApiUrl, getMarketSummary, getWorldGoldHistory } from "../../lib/api-client";
+import type { MarketSummary } from "../../lib/api-client";
+import {
+  getApiUrl,
+  getGoldPriceHistory,
+  getMarketSummary,
+  getUsdVndHistory,
+  getWorldGoldHistory
+} from "../../lib/api-client";
+import {
+  applyLiveTodayValue,
+  buildAverageDailyGoldHistory,
+  buildFxDailyHistory,
+  buildWorldGoldDailyHistory,
+  toVietnamDateKey,
+  type FactorHistoryPoint
+} from "../../lib/factor-history";
 import { formatPercent, formatVnd } from "../../lib/utils";
+import {
+  average,
+  buildScoreExplanation,
+  calculateVangScore,
+  enrichSummaryProducts,
+  getVangDecision,
+  toScoreExplanationInput
+} from "../../lib/vang-score";
 import { ProductTable } from "./product-table";
+import { ScoreExplanationCard } from "./score-explanation";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
+type ExpandedFactor = "xau" | "usd" | "premium" | "spread";
+type FactorHistoryFormat = "usd" | "vnd" | "percent";
 
 export function LiveMarketDashboard({ initialSummary }: { initialSummary: MarketSummary }) {
   const [summary, setSummary] = useState(initialSummary);
-  const [worldExpanded, setWorldExpanded] = useState(false);
-  const [worldHistory, setWorldHistory] = useState<WorldGoldHistoryPoint[] | null>(null);
-  const [worldHistoryError, setWorldHistoryError] = useState(false);
+  const [expandedFactor, setExpandedFactor] = useState<ExpandedFactor | null>(null);
+  const [factorHistory, setFactorHistory] = useState<Partial<Record<ExpandedFactor, FactorHistoryPoint[]>>>(
+    {}
+  );
+  const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
+  const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
 
@@ -43,43 +71,104 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     };
   }, [refreshSummary]);
 
+  const liveProducts = useMemo(() => enrichSummaryProducts(summary), [summary]);
   const averagePremium = useMemo(
-    () => average(summary.products.map((item) => item.premiumSellPct)),
-    [summary.products]
+    () => average(liveProducts.map((item) => item.premiumSellPct)),
+    [liveProducts]
   );
   const averageSpread = useMemo(
-    () => average(summary.products.map((item) => item.spreadPct)),
-    [summary.products]
+    () => average(liveProducts.map((item) => item.spreadPct)),
+    [liveProducts]
   );
-  const averageScore = useMemo(
-    () => Math.round(average(summary.products.map((item) => item.score))),
-    [summary.products]
+  const vangScore = useMemo(
+    () => calculateVangScore(liveProducts.map((item) => item.score)),
+    [liveProducts]
   );
-  const buyScore = useMemo(() => Math.max(0, Math.min(100, 100 - averageScore)), [averageScore]);
   const averageSell = useMemo(
-    () => average(summary.products.map((item) => item.sellPrice)),
-    [summary.products]
+    () => average(liveProducts.map((item) => item.sellPrice)),
+    [liveProducts]
   );
   const priceGap = averageSell - summary.world.worldVndPerLuong;
   const isDataReady =
     summary.products.length > 0 && summary.world.xauUsdPerOz > 0 && summary.world.usdVnd > 0;
   const isStale = Date.now() - new Date(summary.time).getTime() > STALE_AFTER_MS;
-  const decision = getDecision(isDataReady, buyScore, priceGap, averagePremium);
+  const decision = getVangDecision(isDataReady, vangScore, priceGap, averagePremium);
+  const scoreExplanation = useMemo(() => {
+    const dojiProduct = liveProducts.find((product) => product.code === "DOJI_RING_9999");
+    if (!isDataReady || !dojiProduct) return buildScoreExplanation(null);
 
-  const loadWorldHistory = useCallback(async () => {
-    setWorldHistoryError(false);
-    setWorldHistory(null);
-    try {
-      setWorldHistory(await getWorldGoldHistory(7));
-    } catch {
-      setWorldHistoryError(true);
-    }
-  }, []);
+    return buildScoreExplanation(toScoreExplanationInput(dojiProduct, summary.world));
+  }, [liveProducts, summary.world, isDataReady]);
 
-  const toggleWorldHistory = () => {
-    const next = !worldExpanded;
-    setWorldExpanded(next);
-    if (next && !worldHistory) void loadWorldHistory();
+  const productCodes = useMemo(
+    () => liveProducts.map((product) => product.code),
+    [liveProducts]
+  );
+  const todayKey = useMemo(() => toVietnamDateKey(summary.time), [summary.time]);
+
+  const liveFactorValues = useMemo(
+    (): Record<ExpandedFactor, number | null> => ({
+      xau: summary.world.xauUsdPerOz > 0 ? summary.world.xauUsdPerOz : null,
+      usd: summary.world.usdVnd > 0 ? summary.world.usdVnd : null,
+      premium: Number.isFinite(averagePremium) ? averagePremium : null,
+      spread: Number.isFinite(averageSpread) ? averageSpread : null
+    }),
+    [summary.world.xauUsdPerOz, summary.world.usdVnd, averagePremium, averageSpread]
+  );
+
+  const displayedFactorHistory = useMemo(() => {
+    if (!expandedFactor) return null;
+    const cached = factorHistory[expandedFactor];
+    if (!cached) return null;
+    return applyLiveTodayValue(cached, todayKey, liveFactorValues[expandedFactor]);
+  }, [expandedFactor, factorHistory, todayKey, liveFactorValues]);
+
+  useEffect(() => {
+    setFactorHistory({});
+  }, [todayKey]);
+
+  const loadFactorHistory = useCallback(
+    async (factor: ExpandedFactor) => {
+      setFactorHistoryError(null);
+      setFactorHistoryLoading(factor);
+      try {
+        if (factor === "xau") {
+          const points = await getWorldGoldHistory(7);
+          setFactorHistory((current) => ({
+            ...current,
+            xau: buildWorldGoldDailyHistory(points)
+          }));
+        } else if (factor === "usd") {
+          const points = await getUsdVndHistory(7);
+          setFactorHistory((current) => ({
+            ...current,
+            usd: buildFxDailyHistory(points)
+          }));
+        } else {
+          const histories = await Promise.all(
+            productCodes.map((code) => getGoldPriceHistory(code, 7))
+          );
+          setFactorHistory((current) => ({
+            ...current,
+            [factor]: buildAverageDailyGoldHistory(
+              histories,
+              factor === "premium" ? "premiumPercent" : "spreadPercent"
+            )
+          }));
+        }
+      } catch {
+        setFactorHistoryError(factor);
+      } finally {
+        setFactorHistoryLoading(null);
+      }
+    },
+    [productCodes]
+  );
+
+  const toggleFactor = (factor: ExpandedFactor) => {
+    const next = expandedFactor === factor ? null : factor;
+    setExpandedFactor(next);
+    if (next && !factorHistory[next]) void loadFactorHistory(next);
   };
 
   return (
@@ -97,7 +186,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <strong className="rounded-full border border-gold/50 bg-gold/10 px-3 py-1 text-lg text-gold">
               {decision.score === null ? "—" : `${decision.score}/100`}
             </strong>
-            <Help text="VangScore càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi, dựa trên premium và spread." />
+            <Help text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
           </div>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/90 md:text-lg">
             {decision.reason}
@@ -133,54 +222,72 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Các yếu tố ảnh hưởng</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <Factor
-              label="XAU/USD"
-              value={
-                summary.world.xauUsdPerOz
-                  ? `$${summary.world.xauUsdPerOz.toLocaleString("en-US")}`
-                  : "—"
-              }
-            />
-            <Factor
-              label="USD/VND"
-              value={summary.world.usdVnd ? summary.world.usdVnd.toLocaleString("vi-VN") : "—"}
-            />
-            <Factor label="Premium TB" value={formatPercent(averagePremium)} />
-            <Factor label="Spread TB" value={formatPercent(averageSpread)} />
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <ExpandableFactor
+                label="XAU/USD"
+                value={
+                  summary.world.xauUsdPerOz
+                    ? `$${summary.world.xauUsdPerOz.toLocaleString("en-US")}`
+                    : "—"
+                }
+                expanded={expandedFactor === "xau"}
+                onToggle={() => toggleFactor("xau")}
+              />
+              <ExpandableFactor
+                label="USD/VND"
+                value={summary.world.usdVnd ? summary.world.usdVnd.toLocaleString("vi-VN") : "—"}
+                expanded={expandedFactor === "usd"}
+                onToggle={() => toggleFactor("usd")}
+              />
+              <ExpandableFactor
+                label="Premium TB"
+                value={formatPercent(averagePremium)}
+                expanded={expandedFactor === "premium"}
+                onToggle={() => toggleFactor("premium")}
+              />
+              <ExpandableFactor
+                label="Spread TB"
+                value={formatPercent(averageSpread)}
+                expanded={expandedFactor === "spread"}
+                onToggle={() => toggleFactor("spread")}
+              />
+            </div>
+            {expandedFactor ? (
+              <div className="mt-3 border-t border-border pt-3">
+                <FactorHistoryTable
+                  points={displayedFactorHistory}
+                  format={
+                    expandedFactor === "xau"
+                      ? "usd"
+                      : expandedFactor === "usd"
+                        ? "vnd"
+                        : "percent"
+                  }
+                  loading={factorHistoryLoading === expandedFactor}
+                  error={factorHistoryError === expandedFactor}
+                />
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </section>
 
       <section className="mx-auto max-w-5xl px-4 py-6">
+        <ScoreExplanationCard
+          key={`${scoreExplanation.score ?? "na"}-${scoreExplanation.signal ?? "na"}-${summary.time}`}
+          explanation={scoreExplanation}
+        />
+      </section>
+
+      <section className="mx-auto max-w-5xl px-4 pb-6">
         <Card>
           <CardHeader>
             <CardTitle>Giá bán theo sản phẩm</CardTitle>
           </CardHeader>
           <CardContent>
-            <ProductTable products={summary.products} />
+            <ProductTable products={liveProducts} />
           </CardContent>
-        </Card>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-4">
-        <Card>
-          <CardHeader>
-            <button
-              type="button"
-              onClick={toggleWorldHistory}
-              aria-expanded={worldExpanded}
-              className="w-full text-left"
-            >
-              <CardTitle className="text-gold">Vàng Thế Giới</CardTitle>
-              <p className="mt-1 text-sm text-muted">XAU/USD</p>
-            </button>
-          </CardHeader>
-          {worldExpanded ? (
-            <CardContent>
-              <WorldHistory data={worldHistory} error={worldHistoryError} />
-            </CardContent>
-          ) : null}
         </Card>
       </section>
 
@@ -195,6 +302,10 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
               Premium = giá bán trong nước / giá thế giới quy đổi − 1. Spread = (giá bán − giá mua)
               / giá bán.
             </p>
+            <p>
+              VangScore = trung bình điểm tín hiệu của từng sản phẩm. Điểm từng sản phẩm do engine
+              quy tắc gán theo premium, spread, percentile lịch sử và momentum (không dùng AI).
+            </p>
           </div>
         </details>
       </section>
@@ -202,100 +313,59 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   );
 }
 
-function getDecision(ready: boolean, score: number, priceGap: number, premium: number) {
-  if (!ready)
-    return {
-      title: "ĐANG CHỜ THÊM DỮ LIỆU",
-      score: null,
-      reason:
-        "Chưa có đủ giá vàng trong nước, giá thế giới hoặc tỷ giá để đưa ra kết luận đáng tin.",
-      action: "Chờ dữ liệu đầy đủ trước khi quyết định mua."
-    };
-  const reason = `Vàng trong nước đang cao hơn giá thế giới quy đổi khoảng ${formatVnd(Math.max(0, priceGap))}/lượng. Premium hiện ở mức ${formatPercent(premium)}.`;
-  if (score >= 70)
-    return {
-      title: "CÓ THỂ MUA",
-      score,
-      reason,
-      action: "Phù hợp hơn với nhu cầu tích sản dài hạn; vẫn nên chia nhỏ số tiền mua."
-    };
-  if (score >= 40)
-    return {
-      title: "CÂN NHẮC",
-      score,
-      reason,
-      action: "Chỉ mua nếu có nhu cầu dài hạn; chưa phù hợp để mua lướt sóng."
-    };
-  return {
-    title: "NÊN CHỜ THÊM",
-    score,
-    reason,
-    action: "Chỉ mua nếu có nhu cầu dài hạn; chưa phù hợp để mua lướt sóng."
-  };
-}
+function FactorHistoryTable({
+  points,
+  format,
+  loading,
+  error
+}: {
+  points: FactorHistoryPoint[] | null;
+  format: FactorHistoryFormat;
+  loading: boolean;
+  error: boolean;
+}) {
+  if (error) {
+    return (
+      <p className="text-sm text-muted">Chưa thể tải dữ liệu lịch sử. Vui lòng thử lại sau.</p>
+    );
+  }
 
-function WorldHistory({ data, error }: { data: WorldGoldHistoryPoint[] | null; error: boolean }) {
-  const daily = data
-    ? Array.from(
-        new Map(
-          data.map((point) => [
-            new Date(point.time).toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" }),
-            point
-          ])
-        ).values()
-      )
-    : [];
-  const dailyWithChange = daily
-    .map((point, index) => {
-      const previous = daily[index - 1];
-      const change = previous ? point.price - previous.price : null;
-      return {
-        ...point,
-        change
-      };
-    })
-    .reverse();
+  if (loading || !points) {
+    return <div className="h-40 animate-pulse rounded-md bg-background" />;
+  }
+
+  if (points.length === 0) {
+    return <p className="text-sm text-muted">Chưa có dữ liệu lịch sử.</p>;
+  }
+
   return (
-    <div>
-      {error ? (
-        <p className="text-sm text-muted">
-          Chưa thể tải lịch sử giá vàng thế giới. Vui lòng thử lại sau.
-        </p>
-      ) : !data ? (
-        <div className="h-24 animate-pulse rounded bg-background" />
-      ) : (
-        <div className="max-h-48 overflow-auto text-sm">
-          <table className="w-full">
-            <tbody>
-              {dailyWithChange.map((point) => (
-                <tr key={point.time} className="border-b border-border/60">
-                  <td className="py-2 text-muted">
-                    {new Date(point.time).toLocaleDateString("vi-VN", {
-                      timeZone: "Asia/Ho_Chi_Minh"
-                    })}
-                  </td>
-                  <td className="py-2 text-right font-medium">
-                    $
-                    {point.price.toLocaleString("en-US", {
-                      minimumFractionDigits: 1,
-                      maximumFractionDigits: 1
-                    })}
-                  </td>
-                  <td
-                    className={`py-2 text-right text-xs font-medium ${point.change === null || point.change === 0 ? "text-muted" : point.change > 0 ? "text-positive" : "text-red-400"}`}
-                  >
-                    {point.change === null
-                      ? "—"
-                      : point.change === 0
-                        ? "0"
-                        : `${point.change > 0 ? "+" : "−"}${Math.abs(point.change).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="overflow-hidden rounded-md border border-border/60">
+      <table className="w-full table-fixed text-sm">
+        <thead className="bg-background">
+          <tr className="border-b border-border/60 text-xs text-muted">
+            <th className="w-[42%] px-3 py-2 text-left font-medium">Ngày</th>
+            <th className="w-[33%] px-3 py-2 text-right font-medium">Giá trị</th>
+            <th className="w-[25%] px-3 py-2 text-right font-medium">
+              {format === "percent" ? "Biến đổi (pp)" : "Biến đổi"}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {points.map((point) => (
+            <tr key={point.date} className="border-b border-border/50 last:border-b-0">
+              <td className="px-3 py-2 text-muted">{formatHistoryDate(point.date)}</td>
+              <td className="px-3 py-2 text-right font-medium text-foreground">
+                {formatHistoryValue(point.value, format)}
+              </td>
+              <td
+                className={`px-3 py-2 text-right text-xs font-medium ${historyChangeClass(point.change)}`}
+              >
+                {formatHistoryChange(point.change, format)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -311,13 +381,78 @@ function QuickMetric({ label, value, help }: { label: string; value: string; hel
     </div>
   );
 }
-function Factor({ label, value }: { label: string; value: string }) {
+function ExpandableFactor({
+  label,
+  value,
+  expanded,
+  onToggle
+}: {
+  label: string;
+  value: string;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const Icon = expanded ? ChevronUp : ChevronDown;
+
   return (
-    <div className="rounded-md bg-background p-3">
-      <div className="text-xs text-muted">{label}</div>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className="rounded-md bg-background p-3 text-left transition-colors hover:bg-white/[0.04]"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs text-muted">{label}</div>
+        <Icon className="h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
+      </div>
       <div className="mt-1 font-medium text-foreground">{value}</div>
-    </div>
+    </button>
   );
+}
+
+function formatHistoryDate(date: string): string {
+  const [year, month, day] = date.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+function formatHistoryValue(value: number, format: FactorHistoryFormat): string {
+  if (format === "usd") {
+    return `$${value.toLocaleString("en-US", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    })}`;
+  }
+
+  if (format === "vnd") {
+    return value.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
+  }
+
+  return formatPercent(value);
+}
+
+function formatHistoryChange(change: number | null, format: FactorHistoryFormat): string {
+  if (change === null || change === 0) return "—";
+
+  if (format === "usd") {
+    return `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString("en-US", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    })}`;
+  }
+
+  if (format === "vnd") {
+    return `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString("vi-VN", {
+      maximumFractionDigits: 0
+    })}`;
+  }
+
+  const sign = change > 0 ? "+" : "−";
+  return `${sign}${formatPercent(Math.abs(change))}`;
+}
+
+function historyChangeClass(change: number | null): string {
+  if (change === null || change === 0) return "text-muted";
+  return change > 0 ? "text-positive" : "text-red-400";
 }
 function Help({ text }: { text: string }) {
   return (
@@ -325,10 +460,6 @@ function Help({ text }: { text: string }) {
       <CircleHelp className="h-3.5 w-3.5" aria-label={text} />
     </span>
   );
-}
-function average(values: Array<number | string>): number {
-  const numbers = values.map(Number).filter(Number.isFinite);
-  return numbers.reduce((sum, value) => sum + value, 0) / Math.max(numbers.length, 1);
 }
 function formatVietnamTime(value: string): string {
   return new Intl.DateTimeFormat("vi-VN", {

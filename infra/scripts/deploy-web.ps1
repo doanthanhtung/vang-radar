@@ -24,7 +24,7 @@ function Invoke-Compose {
 
 Write-Host "Building production frontend..." -ForegroundColor Cyan
 Invoke-Compose -ComposeArguments @(
-  "run", "--rm", "--no-deps", "app-setup",
+  "run", "--rm", "--no-deps", "-e", "NODE_ENV=production", "app-setup",
   "sh", "-c", "corepack enable && pnpm --filter @vang-radar/web build"
 )
 
@@ -35,9 +35,17 @@ Write-Host "Web container status:" -ForegroundColor Cyan
 Invoke-Compose -ComposeArguments @("ps", "web")
 
 Write-Host "Checking $WebUrl..." -ForegroundColor Cyan
-$response = Invoke-WebRequest -Uri $WebUrl -Method Head -TimeoutSec 30
-if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
-  throw "Web returned HTTP $($response.StatusCode)."
+$statusCode = $null
+for ($attempt = 1; $attempt -le 60; $attempt++) {
+  $statusCode = & curl.exe --silent --output NUL --write-out "%{http_code}" --max-time 5 $WebUrl
+  if ($LASTEXITCODE -eq 0 -and $statusCode -match "^2\d\d$") {
+    break
+  }
+  Start-Sleep -Seconds 1
 }
 
-Write-Host "Frontend deployed successfully (HTTP $($response.StatusCode))." -ForegroundColor Green
+if ($null -eq $statusCode -or $statusCode -lt 200 -or $statusCode -ge 400) {
+  throw "Web chưa sẵn sàng tại $WebUrl. Xem log: docker compose -f $composeFile logs --tail 80 web"
+}
+
+Write-Host "Frontend deployed successfully (HTTP $statusCode)." -ForegroundColor Green

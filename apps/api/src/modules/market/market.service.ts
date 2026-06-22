@@ -4,6 +4,7 @@ import { calculateSpreadPct, calculateWorldVndPerLuong } from "@vang-radar/domai
 import { hasMockLatestInputs } from "../../common/data-source.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import { RedisService } from "../../common/redis.service.js";
+import { latestTickByVietnamDay } from "./market-history.util.js";
 
 type SummaryLike = {
   products?: Array<{
@@ -45,6 +46,15 @@ type MarketSummary = {
     score: number;
     confidence: number;
     reasons: Prisma.JsonArray;
+    premiumPercentile180d: number | null;
+    spreadPercentile180d: number | null;
+    historySampleSize180d: number;
+    xauMomentum7d: number | null;
+    xauMomentum30d: number | null;
+    xauMomentum7dDays: number | null;
+    xauMomentum30dDays: number | null;
+    domesticMomentum7d: number | null;
+    domesticMomentum7dDays: number | null;
     previousDayClose: {
       buyPriceVnd: number;
       sellPriceVnd: number;
@@ -67,7 +77,8 @@ function hasUnreasonableSummary(summary: unknown): boolean {
     (product) =>
       hasUnreasonablePercent(product.premiumSellPct) ||
       hasUnreasonablePercent(product.premiumBuyPct) ||
-      !("previousDayClose" in product)
+      !("previousDayClose" in product) ||
+      !("historySampleSize180d" in product)
   );
 }
 
@@ -108,16 +119,6 @@ export class MarketService {
       },
       orderBy: { time: "desc" }
     });
-    const world7d = await this.prisma.worldGoldPrice.findFirst({
-      where: {
-        isValid: true,
-        symbol: "XAUUSD",
-        time: { lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-
     const products = await this.prisma.goldProduct
       .findMany({
         where: { isActive: true },
@@ -130,8 +131,9 @@ export class MarketService {
       .catch(() => []);
 
     const previousDayCutoff = vietnamStartOfToday();
-    const previousDayCloses = new Map(
-      await Promise.all(
+    const since180d = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+    const [previousDayCloses, historySampleSizes] = await Promise.all([
+      Promise.all(
         products.map(async (product) => {
           const close = await this.prisma.domesticGoldPrice.findFirst({
             where: {
@@ -145,8 +147,21 @@ export class MarketService {
           });
           return [product.id, close] as const;
         })
-      )
-    );
+      ).then((entries) => new Map(entries)),
+      Promise.all(
+        products.map(async (product) => {
+          const metric = product.goldMetrics[0];
+          if (!metric) return [product.id, 0] as const;
+          const count = await this.prisma.goldMetric.count({
+            where: {
+              productId: product.id,
+              time: { gte: since180d, lt: metric.time }
+            }
+          });
+          return [product.id, count] as const;
+        })
+      ).then((entries) => new Map(entries))
+    ]);
 
     const firstMetric = products.find((product) => product.goldMetrics[0])?.goldMetrics[0];
     const effectiveWorldXau = Number(latestWorld?.priceUsdPerOz ?? firstMetric?.xauUsdPerOz ?? 0);
@@ -166,9 +181,9 @@ export class MarketService {
         usdVnd: effectiveUsdVnd,
         worldVndPerLuong: effectiveWorldVnd,
         change7d:
-          latestWorld && world7d && Number(world7d.priceUsdPerOz) !== 0
-            ? Number(latestWorld.priceUsdPerOz) / Number(world7d.priceUsdPerOz) - 1
-            : null
+          firstMetric?.xauMomentum7d === null || firstMetric?.xauMomentum7d === undefined
+            ? null
+            : Number(firstMetric.xauMomentum7d)
       },
       products: products
         .map((product) => {
@@ -225,6 +240,25 @@ export class MarketService {
             score: Number(signal?.score ?? 0),
             confidence: Number(signal?.confidence ?? 0),
             reasons: Array.isArray(signal?.reasons) ? signal.reasons : [],
+            premiumPercentile180d:
+              metric.premiumPercentile180d === null
+                ? null
+                : Number(metric.premiumPercentile180d),
+            spreadPercentile180d:
+              metric.spreadPercentile180d === null ? null : Number(metric.spreadPercentile180d),
+            historySampleSize180d: historySampleSizes.get(product.id) ?? 0,
+            xauMomentum7d: metric.xauMomentum7d === null ? null : Number(metric.xauMomentum7d),
+            xauMomentum30d: metric.xauMomentum30d === null ? null : Number(metric.xauMomentum30d),
+            xauMomentum7dDays:
+              metric.xauMomentum7dDays === null ? null : Number(metric.xauMomentum7dDays),
+            xauMomentum30dDays:
+              metric.xauMomentum30dDays === null ? null : Number(metric.xauMomentum30dDays),
+            domesticMomentum7d:
+              metric.domesticMomentum7d === null ? null : Number(metric.domesticMomentum7d),
+            domesticMomentum7dDays:
+              metric.domesticMomentum7dDays === null
+                ? null
+                : Number(metric.domesticMomentum7dDays),
             previousDayClose
           };
         })
@@ -242,9 +276,29 @@ export class MarketService {
         source: { code: { not: { startsWith: "MOCK_" } } }
       },
       orderBy: { time: "asc" },
-      select: { time: true, priceUsdPerOz: true },
-      take: 1000
+      select: { time: true, priceUsdPerOz: true }
     });
-    return prices.map((price) => ({ time: price.time.toISOString(), price: Number(price.priceUsdPerOz) }));
+    return latestTickByVietnamDay(prices, (price) => Number(price.priceUsdPerOz)).map(
+      ({ time, value }) => ({ time, price: value })
+    );
+  }
+
+  async getUsdVndHistory(days: number) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rates = await this.prisma.fxRate.findMany({
+      where: {
+        isValid: true,
+        pair: "USDVND",
+        rate: { gte: 20_000, lte: 40_000 },
+        time: { gte: since },
+        source: { code: { not: { startsWith: "MOCK_" } } }
+      },
+      orderBy: { time: "asc" },
+      select: { time: true, rate: true }
+    });
+    return latestTickByVietnamDay(rates, (rate) => Number(rate.rate)).map(({ time, value }) => ({
+      time,
+      rate: value
+    }));
   }
 }

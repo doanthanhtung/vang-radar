@@ -1,20 +1,10 @@
-import type { Metadata } from "next";
 import { Radar } from "lucide-react";
 import Link from "next/link";
 import "./globals.css";
 import { Providers } from "./providers";
+import { rootMetadata } from "../lib/seo";
 
-export const metadata: Metadata = {
-  title: {
-    default: "VangScore | Dữ liệu và chỉ số giá vàng Việt Nam",
-    template: "%s | VangScore"
-  },
-  description:
-    "Theo dõi giá vàng Việt Nam, premium, spread và các chỉ số thị trường được cập nhật liên tục.",
-  icons: {
-    icon: "/dashboard-gold.png"
-  }
-};
+export const metadata = rootMetadata;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

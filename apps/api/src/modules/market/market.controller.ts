@@ -26,6 +26,15 @@ export class MarketController {
     return this.marketService.getWorldGoldHistory(parsedDays);
   }
 
+  @Get("usd-vnd")
+  getUsdVndHistory(@Query("days") days = "7") {
+    const parsedDays = Number(days);
+    if (!Number.isInteger(parsedDays) || ![7, 30].includes(parsedDays)) {
+      throw new BadRequestException("days must be 7 or 30");
+    }
+    return this.marketService.getUsdVndHistory(parsedDays);
+  }
+
   @Sse("summary/stream")
   streamSummary(): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {

@@ -22,6 +22,15 @@ export interface MarketSummaryProduct {
   score: number;
   confidence: number;
   reasons: string[];
+  premiumPercentile180d: number | null;
+  spreadPercentile180d: number | null;
+  historySampleSize180d: number;
+  xauMomentum7d: number | null;
+  xauMomentum30d: number | null;
+  xauMomentum7dDays: number | null;
+  xauMomentum30dDays: number | null;
+  domesticMomentum7d: number | null;
+  domesticMomentum7dDays: number | null;
   previousDayClose: {
     buyPriceVnd: number;
     sellPriceVnd: number;
@@ -71,6 +80,11 @@ export interface WorldGoldHistoryPoint {
   price: number;
 }
 
+export interface UsdVndHistoryPoint {
+  time: string;
+  rate: number;
+}
+
 type ApiRequestInit = RequestInit & {
   next?: {
     revalidate?: number | false;
@@ -105,6 +119,10 @@ export async function getMarketSummary(): Promise<MarketSummary> {
 
 export async function getWorldGoldHistory(days: 7 | 30): Promise<WorldGoldHistoryPoint[]> {
   return fetchApi<WorldGoldHistoryPoint[]>(`/market/world-gold?days=${days}`, { cache: "no-store" });
+}
+
+export async function getUsdVndHistory(days: 7 | 30): Promise<UsdVndHistoryPoint[]> {
+  return fetchApi<UsdVndHistoryPoint[]>(`/market/usd-vnd?days=${days}`, { cache: "no-store" });
 }
 
 export async function getMetricHistory(

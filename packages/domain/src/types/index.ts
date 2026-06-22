@@ -70,7 +70,10 @@ export interface SignalInput {
   spreadSampleSize180d: number;
   xauMomentum7d: number | null;
   xauMomentum30d: number | null;
+  xauMomentum7dDays: number | null;
+  xauMomentum30dDays: number | null;
   domesticMomentum7d: number | null;
+  domesticMomentum7dDays: number | null;
   dataQualityScore: number;
   isDataValid: boolean;
 }

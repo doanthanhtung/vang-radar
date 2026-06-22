@@ -145,7 +145,10 @@ model GoldMetric {
   spreadPercentile180d  Decimal?    @map("spread_percentile_180d") @db.Decimal(8, 4)
   xauMomentum7d         Decimal?    @map("xau_momentum_7d") @db.Decimal(12, 8)
   xauMomentum30d        Decimal?    @map("xau_momentum_30d") @db.Decimal(12, 8)
+  xauMomentum7dDays     Int?        @map("xau_momentum_7d_days")
+  xauMomentum30dDays    Int?        @map("xau_momentum_30d_days")
   domesticMomentum7d    Decimal?    @map("domestic_momentum_7d") @db.Decimal(12, 8)
+  domesticMomentum7dDays Int?       @map("domestic_momentum_7d_days")
   createdAt             DateTime    @default(now()) @map("created_at") @db.Timestamptz
   product               GoldProduct @relation(fields: [productId], references: [id])
 
@@ -219,13 +222,41 @@ model AdminAuditLog {
 }
 
 model SiteAccessLog {
-  id         String   @id @default(uuid()) @db.Uuid
-  accessedAt DateTime @default(now()) @map("accessed_at") @db.Timestamptz
-  ipAddress  String   @map("ip_address")
-  path       String?
-  userAgent  String?  @map("user_agent")
+  id             String   @id @default(uuid()) @db.Uuid
+  accessedAt     DateTime @default(now()) @map("accessed_at") @db.Timestamptz
+  ipAddress      String   @map("ip_address")
+  path           String?
+  method         String?
+  userAgent      String?  @map("user_agent")
+  acceptLanguage String?  @map("accept_language")
+  referer        String?
+  country        String?
+  city           String?
+  isBot          Boolean  @default(false) @map("is_bot")
+  botReason      String?  @map("bot_reason")
 
   @@index([accessedAt(sort: Desc)])
   @@index([ipAddress, accessedAt(sort: Desc)])
+  @@index([isBot, accessedAt(sort: Desc)])
   @@map("site_access_logs")
+}
+
+model BotAccessLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  accessedAt     DateTime @default(now()) @map("accessed_at") @db.Timestamptz
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz
+  ipAddress      String   @map("ip_address")
+  path           String?
+  method         String?
+  userAgent      String?  @map("user_agent")
+  acceptLanguage String?  @map("accept_language")
+  referer        String?
+  country        String?
+  city           String?
+  botReason      String   @map("bot_reason")
+
+  @@index([accessedAt(sort: Desc)])
+  @@index([expiresAt(sort: Asc)])
+  @@index([ipAddress, accessedAt(sort: Desc)])
+  @@map("bot_access_logs")
 }

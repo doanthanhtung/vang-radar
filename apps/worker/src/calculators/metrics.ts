@@ -5,16 +5,12 @@ import {
   calculateSpreadPct,
   calculateWorldVndPerLuong
 } from "@vang-radar/domain";
+import { computeDomesticGoldMomentum, computeWorldGoldMomentum } from "./momentum-lookup.js";
 
 function percentileRank(values: number[], current: number): number | null {
   if (values.length === 0) return null;
   const count = values.filter((value) => value <= current).length;
   return (count / values.length) * 100;
-}
-
-function momentum(current: number, previous: number | null): number | null {
-  if (!previous || previous <= 0) return null;
-  return current / previous - 1;
 }
 
 export async function calculateLatestMetrics(prisma: PrismaClient) {
@@ -45,8 +41,11 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
   const now = new Date(Math.max(world.time.getTime(), fx.time.getTime()));
   const worldVndPerLuong = calculateWorldVndPerLuong(Number(world.priceUsdPerOz), Number(fx.rate));
   const since180d = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
-  const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const currentXau = Number(world.priceUsdPerOz);
+  const [xauMomentum7d, xauMomentum30d] = await Promise.all([
+    computeWorldGoldMomentum(prisma, currentXau, 7, now),
+    computeWorldGoldMomentum(prisma, currentXau, 30, now)
+  ]);
   const created = [];
 
   for (const product of products) {
@@ -84,44 +83,12 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
       spreadPct
     );
 
-    const world7d = await prisma.worldGoldPrice.findFirst({
-      where: {
-        isValid: true,
-        symbol: "XAUUSD",
-        time: { lte: since7d },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const world30d = await prisma.worldGoldPrice.findFirst({
-      where: {
-        isValid: true,
-        symbol: "XAUUSD",
-        time: { lte: since30d },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const domestic7d = await prisma.domesticGoldPrice.findFirst({
-      where: {
-        productId: product.id,
-        isValid: true,
-        time: { lte: since7d },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const xauMomentum7d = momentum(
-      Number(world.priceUsdPerOz),
-      world7d ? Number(world7d.priceUsdPerOz) : null
-    );
-    const xauMomentum30d = momentum(
-      Number(world.priceUsdPerOz),
-      world30d ? Number(world30d.priceUsdPerOz) : null
-    );
-    const domesticMomentum7d = momentum(
+    const domesticMomentum7d = await computeDomesticGoldMomentum(
+      prisma,
+      product.id,
       Number(domestic.sellPriceVnd),
-      domestic7d ? Number(domestic7d.sellPriceVnd) : null
+      7,
+      now
     );
 
     const metric = await prisma.goldMetric.upsert({
@@ -138,9 +105,12 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
         spreadPct,
         premiumPercentile180d,
         spreadPercentile180d,
-        xauMomentum7d,
-        xauMomentum30d,
-        domesticMomentum7d
+        xauMomentum7d: xauMomentum7d?.value ?? null,
+        xauMomentum30d: xauMomentum30d?.value ?? null,
+        xauMomentum7dDays: xauMomentum7d?.days ?? null,
+        xauMomentum30dDays: xauMomentum30d?.days ?? null,
+        domesticMomentum7d: domesticMomentum7d?.value ?? null,
+        domesticMomentum7dDays: domesticMomentum7d?.days ?? null
       },
       create: {
         time: now,
@@ -156,9 +126,12 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
         spreadPct,
         premiumPercentile180d,
         spreadPercentile180d,
-        xauMomentum7d,
-        xauMomentum30d,
-        domesticMomentum7d
+        xauMomentum7d: xauMomentum7d?.value ?? null,
+        xauMomentum30d: xauMomentum30d?.value ?? null,
+        xauMomentum7dDays: xauMomentum7d?.days ?? null,
+        xauMomentum30dDays: xauMomentum30d?.days ?? null,
+        domesticMomentum7d: domesticMomentum7d?.value ?? null,
+        domesticMomentum7dDays: domesticMomentum7d?.days ?? null
       }
     });
     created.push(metric);

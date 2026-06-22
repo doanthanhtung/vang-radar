@@ -22,8 +22,8 @@ export class AdminService {
     return this.auditService.list(params);
   }
 
-  getTodayIpAccess() {
-    return this.accessLogService.listTodayIpAccess();
+  getTodayIpAccess(audience: "human" | "bot" | "all" = "human") {
+    return this.accessLogService.listTodayIpAccess(audience);
   }
 
   async getSourceHealth() {

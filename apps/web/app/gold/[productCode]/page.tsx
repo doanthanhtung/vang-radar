@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
-import { PRODUCT_CODES } from "@vang-radar/domain";
+import type { Metadata } from "next";
+import { GOLD_PRODUCTS, PRODUCT_CODES } from "@vang-radar/domain";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { SignalBadge } from "../../../features/market/signal-badge";
 import { MetricChartsPanel } from "../../../features/products/metric-charts-panel";
 import { getMarketSummary } from "../../../lib/api-client";
+import { enrichProductWithLiveSignal } from "../../../lib/vang-score";
+import { createPageMetadata } from "../../../lib/seo";
 import {
   formatPercent,
   formatVnd,
@@ -16,6 +19,27 @@ import {
 export const revalidate = 60;
 export const dynamic = "force-dynamic";
 
+export async function generateMetadata({
+  params
+}: {
+  params: Promise<{ productCode: string }>;
+}): Promise<Metadata> {
+  const { productCode } = await params;
+  if (!PRODUCT_CODES.includes(productCode as (typeof PRODUCT_CODES)[number])) {
+    return {};
+  }
+
+  const product = GOLD_PRODUCTS.find((item) => item.code === productCode);
+  const productName = product?.name ?? productCode;
+
+  return createPageMetadata({
+    title: `Giá ${productName} hôm nay`,
+    description: `Theo dõi giá mua/bán, premium, spread, tín hiệu và biểu đồ lịch sử cho ${productName}.`,
+    path: `/gold/${productCode}`,
+    imageAlt: `Giá ${productName} trên VangScore`
+  });
+}
+
 export default async function ProductPage({
   params
 }: {
@@ -25,8 +49,9 @@ export default async function ProductPage({
   if (!PRODUCT_CODES.includes(productCode as (typeof PRODUCT_CODES)[number])) notFound();
 
   const summary = await getMarketSummary();
-  const product = summary.products.find((item) => item.code === productCode);
-  if (!product) notFound();
+  const rawProduct = summary.products.find((item) => item.code === productCode);
+  if (!rawProduct) notFound();
+  const product = enrichProductWithLiveSignal(rawProduct, summary.world);
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
@@ -66,7 +91,7 @@ export default async function ProductPage({
             <CardTitle>Tín hiệu</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="mb-4 text-4xl font-semibold">{product.score}</div>
+            <div className="mb-4 text-4xl font-semibold">{product.score}/100</div>
             <ul className="space-y-3 text-sm leading-6 text-muted">
               {product.reasons.map((reason) => (
                 <li key={reason}>{reason}</li>

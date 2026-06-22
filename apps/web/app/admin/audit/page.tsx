@@ -35,27 +35,39 @@ type AuditResponse = {
   take: number;
 };
 
+type VisitorAudience = "human" | "bot" | "all";
+
 type TodayIpAccess = {
   ipAddress: string;
   visitCount: number;
   firstAccessAt: string;
   lastAccessAt: string;
   lastPath: string | null;
+  country?: string | null;
+  userAgent?: string | null;
+  audience?: VisitorAudience | "human" | "bot";
 };
 
 type TodayAccessResponse = {
   date: string;
+  audience: VisitorAudience;
   items: TodayIpAccess[];
   totalVisits: number;
 };
 
 const PAGE_SIZE = 50;
+const AUDIENCE_OPTIONS: Array<{ value: VisitorAudience; label: string }> = [
+  { value: "human", label: "Người dùng" },
+  { value: "bot", label: "Bot / scanner" },
+  { value: "all", label: "Tất cả" }
+];
 
 export default function AdminAuditPage() {
   const [credentials, setCredentials] = useState<AdminCredentials | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [action, setAction] = useState("");
   const [appliedAction, setAppliedAction] = useState("");
+  const [audience, setAudience] = useState<VisitorAudience>("human");
   const [skip, setSkip] = useState(0);
   const username = credentials?.username ?? "";
   const password = credentials?.password ?? "";
@@ -75,9 +87,15 @@ export default function AdminAuditPage() {
     enabled: hasCredentials
   });
   const todayAccessQuery = useQuery({
-    queryKey: ["admin-access-today", username],
-    queryFn: async () =>
-      getAdminJson("/admin/access/today", username, password) as Promise<TodayAccessResponse>,
+    queryKey: ["admin-access-today", username, audience],
+    queryFn: async () => {
+      const params = new URLSearchParams({ audience });
+      return getAdminJson(
+        `/admin/access/today?${params.toString()}`,
+        username,
+        password
+      ) as Promise<TodayAccessResponse>;
+    },
     enabled: hasCredentials
   });
 
@@ -111,7 +129,8 @@ export default function AdminAuditPage() {
           <p className="mt-5 text-sm font-medium uppercase text-muted">Security</p>
           <h1 className="mt-2 text-3xl font-semibold">Admin Audit Log</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-            Theo dõi IP truy cập trong ngày và nhật ký append-only cho các thao tác quản trị.
+            Theo dõi IP người dùng thật trong ngày, bot/scanner (debug), và nhật ký append-only cho
+            các thao tác quản trị.
           </p>
         </div>
         <Button
@@ -166,12 +185,26 @@ export default function AdminAuditPage() {
       ) : null}
 
       <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <CardTitle className="flex items-center gap-2">
             <Globe className="h-5 w-5" aria-hidden />
             IP truy cập hôm nay
           </CardTitle>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-muted">
+              <span>Loại</span>
+              <select
+                className="h-9 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none"
+                value={audience}
+                onChange={(event) => setAudience(event.target.value as VisitorAudience)}
+              >
+                {AUDIENCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Badge className="border-border bg-background text-muted">
               {todayUniqueIps} IP
             </Badge>
@@ -186,7 +219,9 @@ export default function AdminAuditPage() {
               <thead>
                 <tr>
                   <Th>IP</Th>
+                  {audience === "all" ? <Th>Loại</Th> : null}
                   <Th>Số lượt</Th>
+                  <Th>Quốc gia</Th>
                   <Th>Lần đầu</Th>
                   <Th>Lần cuối</Th>
                   <Th>Đường dẫn gần nhất</Th>
@@ -195,17 +230,35 @@ export default function AdminAuditPage() {
               <tbody>
                 {todayAccess.length === 0 ? (
                   <tr>
-                    <Td colSpan={5} className="py-10 text-center text-muted">
+                    <Td colSpan={audience === "all" ? 7 : 6} className="py-10 text-center text-muted">
                       {todayAccessQuery.isLoading
                         ? "Đang tải IP truy cập"
-                        : "Chưa có IP truy cập trong ngày"}
+                        : audience === "human"
+                          ? "Chưa có người dùng thật trong ngày"
+                          : audience === "bot"
+                            ? "Chưa có bot/scanner trong ngày"
+                            : "Chưa có IP truy cập trong ngày"}
                     </Td>
                   </tr>
                 ) : (
                   todayAccess.map((entry) => (
-                    <tr key={entry.ipAddress} className="align-top hover:bg-background/70">
+                    <tr key={`${entry.audience ?? audience}-${entry.ipAddress}`} className="align-top hover:bg-background/70">
                       <Td className="font-mono text-xs">{entry.ipAddress}</Td>
+                      {audience === "all" ? (
+                        <Td>
+                          <Badge
+                            className={
+                              entry.audience === "bot"
+                                ? "border-warning/25 bg-warning/10 text-warning"
+                                : "border-positive/25 bg-positive/10 text-positive"
+                            }
+                          >
+                            {entry.audience === "bot" ? "Bot" : "Human"}
+                          </Badge>
+                        </Td>
+                      ) : null}
                       <Td>{entry.visitCount}</Td>
+                      <Td>{entry.country ?? "—"}</Td>
                       <Td className="whitespace-nowrap">
                         {formatVietnamDateTime(entry.firstAccessAt)}
                       </Td>
