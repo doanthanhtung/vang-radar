@@ -172,7 +172,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   };
 
   return (
-    <main className="pb-8">
+    <main id="main-content" className="pb-10">
       <section className="dashboard-visual">
         <div className="mx-auto max-w-4xl px-4 py-10 text-center text-white md:py-14">
           <p className="text-sm font-medium uppercase tracking-wide text-white/75">
@@ -194,7 +194,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
           <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-white/70">
             Gợi ý: {decision.action}
           </p>
-          <div className="mx-auto mt-7 grid max-w-2xl grid-cols-3 divide-x divide-white/20 rounded-lg border border-white/20 bg-black/15 text-left">
+          <div className="mx-auto mt-7 grid max-w-2xl grid-cols-1 divide-y divide-white/20 overflow-hidden rounded-xl border border-white/20 bg-slate-950/20 text-left sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <QuickMetric
               label="Premium TB"
               value={formatPercent(averagePremium)}
@@ -218,7 +218,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
       </section>
 
       <section className="mx-auto max-w-5xl px-4 pt-6">
-        <Card>
+        <Card className="bg-panel/80">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Các yếu tố ảnh hưởng</CardTitle>
           </CardHeader>
@@ -281,7 +281,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
       </section>
 
       <section className="mx-auto max-w-5xl px-4 pb-6">
-        <Card>
+        <Card className="bg-panel/80">
           <CardHeader>
             <CardTitle>Giá bán theo sản phẩm</CardTitle>
           </CardHeader>
@@ -339,7 +339,9 @@ function FactorHistoryTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-border/60">
+    <div className="space-y-3">
+      <FactorSparkline points={points} />
+      <div className="overflow-hidden rounded-md border border-border/60">
       <table className="w-full table-fixed text-sm">
         <thead className="bg-background">
           <tr className="border-b border-border/60 text-xs text-muted">
@@ -366,18 +368,27 @@ function FactorHistoryTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
 
-function QuickMetric({ label, value, help }: { label: string; value: string; help?: string }) {
+function QuickMetric({
+  label,
+  value,
+  help,
+}: {
+  label: string;
+  value: string;
+  help?: string;
+}) {
   return (
     <div className="min-w-0 px-3 py-3 sm:px-5">
       <div className="flex items-center gap-1 text-xs text-white/70">
         {label}
         {help ? <Help text={help} /> : null}
       </div>
-      <div className="mt-1 truncate text-base font-semibold sm:text-xl">{value}</div>
+      <div className="mt-1 break-words text-base font-semibold tabular-nums sm:text-xl">{value}</div>
     </div>
   );
 }
@@ -399,7 +410,7 @@ function ExpandableFactor({
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
-      className="rounded-md bg-background p-3 text-left transition-colors hover:bg-white/[0.04]"
+      className="rounded-lg bg-background/85 p-3 text-left transition duration-200 hover:bg-white/[0.06] active:scale-[0.98]"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-muted">{label}</div>
@@ -456,9 +467,47 @@ function historyChangeClass(change: number | null): string {
 }
 function Help({ text }: { text: string }) {
   return (
-    <span title={text}>
-      <CircleHelp className="h-3.5 w-3.5" aria-label={text} />
-    </span>
+    <details className="help-tooltip">
+      <summary aria-label={`Giải thích: ${text}`}>
+        <CircleHelp className="h-3.5 w-3.5" aria-hidden />
+      </summary>
+      <span role="tooltip">{text}</span>
+    </details>
+  );
+}
+
+function FactorSparkline({ points }: { points: FactorHistoryPoint[] }) {
+  const firstPoint = points[0]!;
+  const lastPoint = points[points.length - 1]!;
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const coordinates = values
+    .map((value, index) => {
+      const x = values.length === 1 ? 50 : (index / (values.length - 1)) * 100;
+      const y = 100 - ((value - min) / range) * 78 - 11;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60 bg-background/50 px-3 py-2">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-muted">
+        <span>Xu hướng 7 ngày</span>
+        <span className="tabular-nums">{formatHistoryDate(firstPoint.date)} — {formatHistoryDate(lastPoint.date)}</span>
+      </div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-16 w-full" role="img" aria-label="Biểu đồ xu hướng 7 ngày">
+        <defs>
+          <linearGradient id="factor-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="#facc15" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#facc15" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <polygon points={`0,100 ${coordinates} 100,100`} fill="url(#factor-fill)" />
+        <polyline points={coordinates} fill="none" stroke="#facc15" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
   );
 }
 function formatVietnamTime(value: string): string {

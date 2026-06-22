@@ -54,7 +54,14 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
   };
 
   if (products.length === 0) {
-    return <div className="py-8 text-center text-sm text-muted">Chưa có dữ liệu giá thật.</div>;
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-background/35 px-5 py-10 text-center">
+        <p className="font-medium text-foreground">Chưa có bảng giá để so sánh</p>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
+          Dữ liệu giá từ các thương hiệu vàng sẽ xuất hiện ở đây ngay khi nguồn cung cấp bản cập nhật mới.
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -65,13 +72,13 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
           return (
             <article
               key={product.code}
-              className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel"
+              className="overflow-hidden rounded-xl border border-border/80 bg-panel/75 shadow-[0_12px_30px_rgba(2,6,23,0.18)]"
             >
               <button
                 type="button"
                 onClick={() => toggleProduct(product.code)}
                 aria-expanded={isExpanded}
-                className="w-full p-4 text-left transition-colors hover:bg-white/[0.04]"
+                className="w-full p-4 text-left transition duration-200 hover:bg-white/[0.04] active:scale-[0.995]"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -108,7 +115,7 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
         })}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border bg-panel shadow-panel md:block">
+      <div className="hidden overflow-x-auto rounded-xl border border-border/80 bg-panel/75 shadow-[0_12px_30px_rgba(2,6,23,0.18)] md:block">
         <Table>
           <thead className="bg-background/85">
             <tr>

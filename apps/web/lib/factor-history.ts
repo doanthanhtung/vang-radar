@@ -90,7 +90,8 @@ export function applyLiveTodayValue(
     return [{ date: todayKey, value: liveValue, change: null }];
   }
 
-  const [latest, ...rest] = points;
+  const latest = points[0]!;
+  const rest = points.slice(1);
 
   if (latest.date === todayKey) {
     const previousValue = rest[0]?.value ?? null;
