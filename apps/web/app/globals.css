@@ -87,29 +87,11 @@ a {
   position: relative;
 }
 
-.help-tooltip {
-  position: relative;
-  display: inline-flex;
-}
-
-.help-tooltip > summary {
-  display: inline-flex;
-  cursor: help;
-  list-style: none;
-}
-
-.help-tooltip > summary::-webkit-details-marker {
-  display: none;
-}
-
-.help-tooltip [role="tooltip"] {
-  position: absolute;
-  z-index: 10;
-  bottom: calc(100% + 0.5rem);
-  left: 50%;
+.help-popover {
+  position: fixed;
+  z-index: 50;
   width: max-content;
   max-width: min(16rem, 75vw);
-  transform: translateX(-50%);
   border: 1px solid rgba(250, 204, 21, 0.28);
   border-radius: 0.5rem;
   background: #111827;

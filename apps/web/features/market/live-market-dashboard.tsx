@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, CircleHelp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import type { MarketSummary } from "../../lib/api-client";
 import {
   getApiUrl,
@@ -186,7 +187,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <strong className="rounded-full border border-gold/50 bg-gold/10 px-3 py-1 text-lg text-gold">
               {decision.score === null ? "—" : `${decision.score}/100`}
             </strong>
-            <Help text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
+            <HelpTooltip text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
           </div>
           <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/90 md:text-lg">
             {decision.reason}
@@ -388,7 +389,7 @@ function QuickMetric({
     <div className="min-w-0 px-3 py-3 sm:px-5">
       <div className="flex items-center gap-1 text-xs text-white/70">
         {label}
-        {help ? <Help text={help} /> : null}
+        {help ? <HelpTooltip text={help} /> : null}
       </div>
       <div className="mt-1 break-words text-base font-semibold tabular-nums sm:text-xl">{value}</div>
     </div>
@@ -467,17 +468,6 @@ function historyChangeClass(change: number | null): string {
   if (change === null || change === 0) return "text-muted";
   return change > 0 ? "text-positive" : "text-red-400";
 }
-function Help({ text }: { text: string }) {
-  return (
-    <details className="help-tooltip">
-      <summary aria-label={`Giải thích: ${text}`}>
-        <CircleHelp className="h-3.5 w-3.5" aria-hidden />
-      </summary>
-      <span role="tooltip">{text}</span>
-    </details>
-  );
-}
-
 function FactorSparkline({ points }: { points: FactorHistoryPoint[] }) {
   const firstPoint = points[0]!;
   const lastPoint = points[points.length - 1]!;

@@ -1,11 +1,12 @@
 "use client";
 
-import { ChevronDown, ChevronUp, ArrowDown, ArrowUp, CircleHelp } from "lucide-react";
+import { ChevronDown, ChevronUp, ArrowDown, ArrowUp } from "lucide-react";
 import { useState } from "react";
 import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
 import { getGoldPriceHistory } from "../../lib/api-client";
 import { formatPercent, formatVnd } from "../../lib/utils";
 import { Table, Td, Th } from "../../components/ui/table";
+import { HelpTooltip } from "../../components/ui/help-tooltip";
 import { SignalBadge } from "./signal-badge";
 import { DailyPriceHistory } from "./daily-price-history";
 
@@ -280,9 +281,7 @@ function MetricLabel({ label, description }: { label: string; description: strin
   return (
     <span className="inline-flex items-center gap-1">
       {label}
-      <span title={description}>
-        <CircleHelp className="h-3.5 w-3.5 text-muted" aria-label={description} />
-      </span>
+      <HelpTooltip text={description} className="text-muted" />
     </span>
   );
 }
