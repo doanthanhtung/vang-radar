@@ -1,5 +1,6 @@
 import type {
   DailyGoldPrice,
+  DxyHistoryPoint,
   GoldPriceHistory,
   UsdVndHistoryPoint,
   WorldGoldHistoryPoint
@@ -40,6 +41,10 @@ export function buildFxDailyHistory(points: UsdVndHistoryPoint[]): FactorHistory
   return buildLatestValueByDayHistory(
     points.map((point) => ({ time: point.time, value: point.rate }))
   );
+}
+
+export function buildDxyDailyHistory(points: DxyHistoryPoint[]): FactorHistoryPoint[] {
+  return buildLatestValueByDayHistory(points.map((point) => ({ time: point.time, value: point.value })));
 }
 
 export function buildAverageDailyGoldHistory(

@@ -16,6 +16,7 @@ export default async function HomePage() {
   const fallback: MarketSummary = {
     time: new Date().toISOString(),
     world: { xauUsdPerOz: 0, usdVnd: 0, worldVndPerLuong: 0, change7d: null },
+    macro: { dxy: null },
     products: []
   };
   const summary = await getMarketSummary().catch(() => fallback);

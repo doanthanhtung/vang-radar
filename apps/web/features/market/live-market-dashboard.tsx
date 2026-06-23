@@ -7,6 +7,7 @@ import { HelpTooltip } from "../../components/ui/help-tooltip";
 import type { MarketSummary } from "../../lib/api-client";
 import {
   getApiUrl,
+  getDxyHistory,
   getGoldPriceHistory,
   getMarketSummary,
   getUsdVndHistory,
@@ -15,6 +16,7 @@ import {
 import {
   applyLiveTodayValue,
   buildAverageDailyGoldHistory,
+  buildDxyDailyHistory,
   buildFxDailyHistory,
   buildWorldGoldDailyHistory,
   toVietnamDateKey,
@@ -34,8 +36,8 @@ import { ScoreExplanationCard } from "./score-explanation";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
-type ExpandedFactor = "xau" | "usd" | "premium" | "spread";
-type FactorHistoryFormat = "usd" | "vnd" | "percent";
+type ExpandedFactor = "xau" | "dxy" | "usd" | "premium" | "spread";
+type FactorHistoryFormat = "usd" | "vnd" | "percent" | "index";
 
 export function LiveMarketDashboard({ initialSummary }: { initialSummary: MarketSummary }) {
   const [summary, setSummary] = useState(initialSummary);
@@ -110,6 +112,8 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   const liveFactorValues = useMemo(
     (): Record<ExpandedFactor, number | null> => ({
       xau: summary.world.xauUsdPerOz > 0 ? summary.world.xauUsdPerOz : null,
+      // DXY is an end-of-session macro series; do not copy an older close into today's row.
+      dxy: null,
       usd: summary.world.usdVnd > 0 ? summary.world.usdVnd : null,
       premium: Number.isFinite(averagePremium) ? averagePremium : null,
       spread: Number.isFinite(averageSpread) ? averageSpread : null
@@ -139,6 +143,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             ...current,
             xau: buildWorldGoldDailyHistory(points)
           }));
+        } else if (factor === "dxy") {
+          const points = await getDxyHistory(7);
+          setFactorHistory((current) => ({ ...current, dxy: buildDxyDailyHistory(points) }));
         } else if (factor === "usd") {
           const points = await getUsdVndHistory(7);
           setFactorHistory((current) => ({
@@ -224,7 +231,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <CardTitle className="text-base">Các yếu tố ảnh hưởng</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
               <ExpandableFactor
                 label="XAU/USD"
                 value={
@@ -240,6 +247,17 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 value={summary.world.usdVnd ? summary.world.usdVnd.toLocaleString("vi-VN") : "—"}
                 expanded={expandedFactor === "usd"}
                 onToggle={() => toggleFactor("usd")}
+              />
+              <ExpandableFactor
+                label="DXY"
+                value={
+                  summary.macro.dxy?.toLocaleString("en-US", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  }) ?? "—"
+                }
+                expanded={expandedFactor === "dxy"}
+                onToggle={() => toggleFactor("dxy")}
               />
               <ExpandableFactor
                 label="Premium TB"
@@ -261,7 +279,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                   format={
                     expandedFactor === "xau"
                       ? "usd"
-                      : expandedFactor === "usd"
+                      : expandedFactor === "dxy"
+                        ? "index"
+                        : expandedFactor === "usd"
                         ? "vnd"
                         : "percent"
                   }
@@ -441,6 +461,10 @@ function formatHistoryValue(value: number, format: FactorHistoryFormat): string 
     return value.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
   }
 
+  if (format === "index") {
+    return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
   return formatPercent(value);
 }
 
@@ -457,6 +481,13 @@ function formatHistoryChange(change: number | null, format: FactorHistoryFormat)
   if (format === "vnd") {
     return `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString("vi-VN", {
       maximumFractionDigits: 0
+    })}`;
+  }
+
+  if (format === "index") {
+    return `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
     })}`;
   }
 

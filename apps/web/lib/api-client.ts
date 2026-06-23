@@ -45,6 +45,9 @@ export interface MarketSummary {
     worldVndPerLuong: number;
     change7d: number | null;
   };
+  macro: {
+    dxy: number | null;
+  };
   products: MarketSummaryProduct[];
 }
 
@@ -85,6 +88,11 @@ export interface UsdVndHistoryPoint {
   rate: number;
 }
 
+export interface DxyHistoryPoint {
+  time: string;
+  value: number;
+}
+
 type ApiRequestInit = RequestInit & {
   next?: {
     revalidate?: number | false;
@@ -123,6 +131,10 @@ export async function getWorldGoldHistory(days: 7 | 30): Promise<WorldGoldHistor
 
 export async function getUsdVndHistory(days: 7 | 30): Promise<UsdVndHistoryPoint[]> {
   return fetchApi<UsdVndHistoryPoint[]>(`/market/usd-vnd?days=${days}`, { cache: "no-store" });
+}
+
+export async function getDxyHistory(days: 7 | 30): Promise<DxyHistoryPoint[]> {
+  return fetchApi<DxyHistoryPoint[]>(`/market/dxy?days=${days}`, { cache: "no-store" });
 }
 
 export async function getMetricHistory(

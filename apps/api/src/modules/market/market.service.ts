@@ -32,6 +32,9 @@ type MarketSummary = {
     worldVndPerLuong: number;
     change7d: number | null;
   };
+  macro: {
+    dxy: number | null;
+  };
   products: Array<{
     code: string;
     name: string;
@@ -94,11 +97,12 @@ export class MarketService {
       return {
         time: new Date().toISOString(),
         world: { xauUsdPerOz: 0, usdVnd: 0, worldVndPerLuong: 0, change7d: null },
+        macro: { dxy: null },
         products: []
       };
     }
 
-    const cached = await this.redis.getJson<MarketSummary>("market:summary:latest:v2");
+    const cached = await this.redis.getJson<MarketSummary>("market:summary:latest:v3");
     if (cached && !hasUnreasonableSummary(cached)) return cached;
 
     const latestFx = await this.prisma.fxRate.findFirst({
@@ -118,6 +122,11 @@ export class MarketService {
         source: { code: { not: { startsWith: "MOCK_" } } }
       },
       orderBy: { time: "desc" }
+    });
+    const latestDxy = await this.prisma.macroIndicator.findFirst({
+      where: { code: "DXY", isValid: true, value: { gt: 0 } },
+      orderBy: { time: "desc" },
+      select: { value: true }
     });
     const products = await this.prisma.goldProduct
       .findMany({
@@ -185,6 +194,7 @@ export class MarketService {
             ? null
             : Number(firstMetric.xauMomentum7d)
       },
+      macro: { dxy: latestDxy ? Number(latestDxy.value) : null },
       products: products
         .map((product) => {
           const metric = product.goldMetrics[0];
@@ -299,6 +309,19 @@ export class MarketService {
     return latestTickByVietnamDay(rates, (rate) => Number(rate.rate)).map(({ time, value }) => ({
       time,
       rate: value
+    }));
+  }
+
+  async getDxyHistory(days: number) {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const values = await this.prisma.macroIndicator.findMany({
+      where: { code: "DXY", isValid: true, value: { gt: 0 }, time: { gte: since } },
+      orderBy: { time: "asc" },
+      select: { time: true, value: true }
+    });
+    return latestTickByVietnamDay(values, (point) => Number(point.value)).map(({ time, value }) => ({
+      time,
+      value
     }));
   }
 }

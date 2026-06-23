@@ -35,6 +35,15 @@ export class MarketController {
     return this.marketService.getUsdVndHistory(parsedDays);
   }
 
+  @Get("dxy")
+  getDxyHistory(@Query("days") days = "7") {
+    const parsedDays = Number(days);
+    if (!Number.isInteger(parsedDays) || ![7, 30].includes(parsedDays)) {
+      throw new BadRequestException("days must be 7 or 30");
+    }
+    return this.marketService.getDxyHistory(parsedDays);
+  }
+
   @Sse("summary/stream")
   streamSummary(): Observable<MessageEvent> {
     return new Observable<MessageEvent>((subscriber) => {
