@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { GoldPriceHistory } from "./api-client";
 import {
   applyLiveTodayValue,
+  applyLiveGoldPriceHistory,
   buildAverageDailyGoldHistory,
   buildFxDailyHistory,
   buildWorldGoldDailyHistory
@@ -76,6 +77,58 @@ describe("applyLiveTodayValue", () => {
   it("returns the original history when live value is missing", () => {
     const points = [{ date: "2026-06-22", value: 2300, change: null }];
     expect(applyLiveTodayValue(points, "2026-06-22", null)).toBe(points);
+  });
+});
+
+describe("applyLiveGoldPriceHistory", () => {
+  it("overrides today's temporary values with the live dashboard values", () => {
+    const history = applyLiveGoldPriceHistory(
+      {
+        type: "SJC_BAR",
+        days: 7,
+        data: [
+          {
+            date: "2026-06-21",
+            open: 100,
+            high: 105,
+            low: 99,
+            close: 100,
+            isToday: false,
+            isTemporaryClose: false,
+            changePercent: null,
+            intradayRangePercent: null,
+            spreadPercent: 0.02,
+            premiumPercent: 0.1
+          },
+          {
+            date: "2026-06-22",
+            open: 100,
+            high: 102,
+            low: 100,
+            close: 101,
+            isToday: true,
+            isTemporaryClose: true,
+            changePercent: 0.01,
+            intradayRangePercent: null,
+            spreadPercent: 0.021,
+            premiumPercent: 0.11
+          }
+        ]
+      },
+      "2026-06-22",
+      { sellPrice: 104, premiumSellPct: 0.12, spreadPct: 0.025 }
+    );
+
+    expect(history.data).toHaveLength(2);
+    expect(history.data[1]).toMatchObject({
+      date: "2026-06-22",
+      close: 104,
+      high: 104,
+      low: 100,
+      premiumPercent: 0.12,
+      spreadPercent: 0.025,
+      changePercent: 0.04
+    });
   });
 });
 

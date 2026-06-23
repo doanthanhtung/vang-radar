@@ -287,7 +287,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <CardTitle>Giá bán theo sản phẩm</CardTitle>
           </CardHeader>
           <CardContent>
-            <ProductTable products={liveProducts} />
+            <ProductTable products={liveProducts} asOf={summary.time} />
           </CardContent>
         </Card>
       </section>

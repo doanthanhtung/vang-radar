@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, ArrowDown, ArrowUp } from "lucide-react";
 import { useState } from "react";
 import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
 import { getGoldPriceHistory } from "../../lib/api-client";
+import { applyLiveGoldPriceHistory, toVietnamDateKey } from "../../lib/factor-history";
 import { formatPercent, formatVnd } from "../../lib/utils";
 import { Table, Td, Th } from "../../components/ui/table";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
@@ -15,7 +16,7 @@ type HistoryState =
   | { status: "success"; data: GoldPriceHistory }
   | { status: "error"; message: string };
 
-export function ProductTable({ products }: { products: MarketSummaryProduct[] }) {
+export function ProductTable({ products, asOf }: { products: MarketSummaryProduct[]; asOf: string }) {
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
   const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
 
@@ -108,6 +109,8 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
                   <HistoryContent
                     state={historyByCode[product.code]}
                     retry={() => retryHistory(product.code)}
+                    product={product}
+                    asOf={asOf}
                   />
                 </div>
               ) : null}
@@ -138,6 +141,7 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[] })
                   state={historyByCode[product.code]}
                   onToggle={() => toggleProduct(product.code)}
                   onRetry={() => retryHistory(product.code)}
+                  asOf={asOf}
                 />
               );
             })}
@@ -153,13 +157,15 @@ function ProductRows({
   expanded,
   state,
   onToggle,
-  onRetry
+  onRetry,
+  asOf
 }: {
   product: MarketSummaryProduct;
   expanded: boolean;
   state: HistoryState | undefined;
   onToggle: () => void;
   onRetry: () => void;
+  asOf: string;
 }) {
   return (
     <>
@@ -198,7 +204,7 @@ function ProductRows({
       {expanded ? (
         <tr id={`price-history-${product.code}`}>
           <Td colSpan={5} className="bg-background/70 p-3">
-            <HistoryContent state={state} retry={onRetry} />
+            <HistoryContent state={state} retry={onRetry} product={product} asOf={asOf} />
           </Td>
         </tr>
       ) : null}
@@ -206,7 +212,17 @@ function ProductRows({
   );
 }
 
-function HistoryContent({ state, retry }: { state: HistoryState | undefined; retry: () => void }) {
+function HistoryContent({
+  state,
+  retry,
+  product,
+  asOf
+}: {
+  state: HistoryState | undefined;
+  retry: () => void;
+  product: MarketSummaryProduct;
+  asOf: string;
+}) {
   if (!state || state.status === "loading")
     return (
       <div className="h-72 animate-pulse rounded-lg bg-panel" aria-label="Đang tải lịch sử giá" />
@@ -220,7 +236,15 @@ function HistoryContent({ state, retry }: { state: HistoryState | undefined; ret
         </button>
       </div>
     );
-  return <DailyPriceHistory history={state.data} />;
+  return (
+    <DailyPriceHistory
+      history={applyLiveGoldPriceHistory(state.data, toVietnamDateKey(asOf), {
+        sellPrice: product.sellPrice,
+        premiumSellPct: product.premiumSellPct,
+        spreadPct: product.spreadPct
+      })}
+    />
+  );
 }
 
 function ExpandIcon({ expanded }: { expanded: boolean }) {

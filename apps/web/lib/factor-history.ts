@@ -1,4 +1,9 @@
-import type { GoldPriceHistory, UsdVndHistoryPoint, WorldGoldHistoryPoint } from "./api-client";
+import type {
+  DailyGoldPrice,
+  GoldPriceHistory,
+  UsdVndHistoryPoint,
+  WorldGoldHistoryPoint
+} from "./api-client";
 
 export interface FactorHistoryPoint {
   date: string;
@@ -99,4 +104,36 @@ export function applyLiveTodayValue(
 
   const change = liveValue - latest.value;
   return [...points, { date: todayKey, value: liveValue, change }];
+}
+
+export function applyLiveGoldPriceHistory(
+  history: GoldPriceHistory,
+  todayKey: string,
+  live: { sellPrice: number; premiumSellPct: number; spreadPct: number }
+): GoldPriceHistory {
+  if (!Number.isFinite(live.sellPrice) || live.sellPrice <= 0) return history;
+
+  const lastPoint = history.data[history.data.length - 1];
+  const hasToday = lastPoint?.date === todayKey;
+  const previousClose = hasToday ? history.data[history.data.length - 2]?.close : lastPoint?.close;
+  const changePercent =
+    previousClose && previousClose > 0 ? (live.sellPrice - previousClose) / previousClose : null;
+  const today: DailyGoldPrice = {
+    date: todayKey,
+    open: hasToday ? lastPoint.open : previousClose ?? live.sellPrice,
+    high: hasToday ? Math.max(lastPoint.high, live.sellPrice) : Math.max(previousClose ?? live.sellPrice, live.sellPrice),
+    low: hasToday ? Math.min(lastPoint.low, live.sellPrice) : Math.min(previousClose ?? live.sellPrice, live.sellPrice),
+    close: live.sellPrice,
+    isToday: true,
+    isTemporaryClose: true,
+    changePercent,
+    intradayRangePercent: null,
+    spreadPercent: live.spreadPct,
+    premiumPercent: live.premiumSellPct
+  };
+
+  return {
+    ...history,
+    data: hasToday ? [...history.data.slice(0, -1), today] : [...history.data, today]
+  };
 }
