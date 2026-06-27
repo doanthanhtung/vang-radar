@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  ChevronDown,
-  ChevronUp,
   Clock3,
   Database,
   Gauge,
@@ -128,6 +126,20 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     if (!cached) return null;
     return applyLiveTodayValue(cached, todayKey, liveFactorValues[expandedFactor]);
   }, [expandedFactor, factorHistory, todayKey, liveFactorValues]);
+  const factorIndicatorHistory = useMemo(
+    () =>
+      (["xau", "usd", "dxy", "premium", "spread"] as const).reduce(
+        (accumulator, factor) => {
+          const cached = factorHistory[factor];
+          accumulator[factor] = cached
+            ? applyLiveTodayValue(cached, todayKey, liveFactorValues[factor])
+            : null;
+          return accumulator;
+        },
+        {} as Record<ExpandedFactor, FactorHistoryPoint[] | null>
+      ),
+    [factorHistory, todayKey, liveFactorValues]
+  );
 
   useEffect(() => {
     setFactorHistory({});
@@ -283,24 +295,28 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             </div>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
-              <ExpandableFactor
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+              <IndicatorFactor
                 label="XAU/USD"
                 value={
                   summary.world.xauUsdPerOz
                     ? `$${summary.world.xauUsdPerOz.toLocaleString("en-US")}`
                     : "—"
                 }
+                delta={getLatestFactorChange(factorIndicatorHistory.xau)}
+                format="usd"
                 expanded={expandedFactor === "xau"}
                 onToggle={() => toggleFactor("xau")}
               />
-              <ExpandableFactor
+              <IndicatorFactor
                 label="USD/VND"
                 value={summary.world.usdVnd ? summary.world.usdVnd.toLocaleString("vi-VN") : "—"}
+                delta={getLatestFactorChange(factorIndicatorHistory.usd)}
+                format="vnd"
                 expanded={expandedFactor === "usd"}
                 onToggle={() => toggleFactor("usd")}
               />
-              <ExpandableFactor
+              <IndicatorFactor
                 label="DXY"
                 value={
                   summary.macro.dxy?.toLocaleString("en-US", {
@@ -308,21 +324,26 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                     maximumFractionDigits: 2
                   }) ?? "—"
                 }
+                delta={getLatestFactorChange(factorIndicatorHistory.dxy)}
+                format="index"
                 expanded={expandedFactor === "dxy"}
                 onToggle={() => toggleFactor("dxy")}
               />
-              <ExpandableFactor
+              <IndicatorFactor
                 label="Premium TB"
                 value={formatPercent(averagePremium)}
+                delta={getLatestFactorChange(factorIndicatorHistory.premium)}
+                format="percent"
                 expanded={expandedFactor === "premium"}
                 onToggle={() => toggleFactor("premium")}
               />
-              <ExpandableFactor
+              <IndicatorFactor
                 label="Spread TB"
                 value={formatPercent(averageSpread)}
+                delta={getLatestFactorChange(factorIndicatorHistory.spread)}
+                format="percent"
                 expanded={expandedFactor === "spread"}
                 onToggle={() => toggleFactor("spread")}
-                className="col-span-2 sm:col-span-1"
               />
             </div>
             {expandedFactor ? (
@@ -476,38 +497,69 @@ function FactorHistoryTable({
   );
 }
 
-function ExpandableFactor({
+function IndicatorFactor({
   label,
   value,
+  delta,
+  format,
   expanded,
-  onToggle,
-  className
+  onToggle
 }: {
   label: string;
   value: string;
+  delta: number | null | undefined;
+  format: FactorHistoryFormat;
   expanded: boolean;
   onToggle: () => void;
-  className?: string;
 }) {
-  const Icon = expanded ? ChevronUp : ChevronDown;
-
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
       className={cn(
-        "rounded-md border border-white/[0.04] bg-background/75 p-3 text-left transition duration-200 hover:border-gold/25 hover:bg-white/[0.06] active:scale-[0.98]",
-        className
+        "metric-panel min-h-[7.25rem] rounded-lg p-3 text-left transition duration-200 hover:border-gold/30 hover:bg-white/[0.05] active:scale-[0.98]",
+        expanded && "border-gold/45 bg-gold/[0.06]"
       )}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs text-muted">{label}</div>
-        <Icon className="h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
+      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="mt-2 truncate text-2xl font-semibold tracking-tight text-foreground" title={value}>
+        {value}
       </div>
-      <div className="mt-1 font-medium text-foreground">{value}</div>
+      <div className="mt-3">
+        <FactorDeltaBadge delta={delta} format={format} />
+      </div>
     </button>
   );
+}
+
+function FactorDeltaBadge({
+  delta,
+  format
+}: {
+  delta: number | null | undefined;
+  format: FactorHistoryFormat;
+}) {
+  if (delta === undefined) {
+    return <span className="text-xs text-muted">Đang cập nhật</span>;
+  }
+
+  if (delta === null || delta === 0) {
+    return <span className="text-xs font-medium text-muted">— so với hôm qua</span>;
+  }
+
+  const positive = delta > 0;
+  return (
+    <span className={cn("text-xs font-semibold", positive ? "text-positive" : "text-red-400")}>
+      {positive ? "▲" : "▼"} {formatDeltaValue(delta, format)}
+      <span className="ml-1 font-medium text-muted">so với hôm qua</span>
+    </span>
+  );
+}
+
+function getLatestFactorChange(points: FactorHistoryPoint[] | null): number | null | undefined {
+  if (!points) return undefined;
+  return points[points.length - 1]?.change ?? null;
 }
 
 function formatHistoryDate(date: string): string {
@@ -559,6 +611,27 @@ function formatHistoryChange(change: number | null, format: FactorHistoryFormat)
 
   const sign = change > 0 ? "+" : "−";
   return `${sign}${formatPercent(Math.abs(change))}`;
+}
+
+function formatDeltaValue(delta: number, format: FactorHistoryFormat): string {
+  const value = Math.abs(delta);
+
+  if (format === "usd") {
+    return `$${value.toLocaleString("en-US", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    })}`;
+  }
+
+  if (format === "vnd") {
+    return value.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
+  }
+
+  if (format === "index") {
+    return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  return formatPercent(value);
 }
 
 function historyChangeClass(change: number | null): string {
