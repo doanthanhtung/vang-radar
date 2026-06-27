@@ -545,14 +545,13 @@ function FactorDeltaBadge({
   }
 
   if (delta === null || delta === 0) {
-    return <span className="text-xs font-medium text-muted">— so với hôm qua</span>;
+    return <span className="text-xs font-medium text-muted">—</span>;
   }
 
   const positive = delta > 0;
   return (
     <span className={cn("text-xs font-semibold", positive ? "text-positive" : "text-red-400")}>
       {positive ? "▲" : "▼"} {formatDeltaValue(delta, format)}
-      <span className="ml-1 font-medium text-muted">so với hôm qua</span>
     </span>
   );
 }

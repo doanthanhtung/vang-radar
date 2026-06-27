@@ -14,7 +14,6 @@ import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
 import {
   getPremiumLevel,
   getSpreadLevel,
-  getSpreadPremiumBadgeClassName,
   getSpreadPremiumTextClassName
 } from "../../lib/utils";
 
@@ -85,7 +84,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         <div>
           <h3 className="font-semibold tracking-tight text-foreground">{title}</h3>
           <p className="mt-1 text-xs leading-5 text-muted">
-            Dùng giá bán ra cuối ngày. Hôm nay tạm tính theo giá mới nhất.
+            Dùng giá bán ra cuối ngày. Hôm nay dùng giá mới nhất.
           </p>
         </div>
         <span className="w-fit rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[11px] text-muted">
@@ -214,10 +213,10 @@ function HistoryRow({ point }: { point: DailyGoldPrice }) {
         {formatPercent(point.changePercent, true)}
       </td>
       <td className="px-2 py-2">
-        <RateValue value={point.spreadPercent} type="spread" showLevel={false} />
+        <RateValue value={point.spreadPercent} type="spread" />
       </td>
       <td className="px-2 py-2">
-        <RateValue value={point.premiumPercent} type="premium" showLevel={false} />
+        <RateValue value={point.premiumPercent} type="premium" />
       </td>
     </tr>
   );
@@ -251,11 +250,11 @@ function HistoryCard({
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <Metric
           label="Spread"
-          value={<RateValue value={point.spreadPercent} type="spread" showLevel={false} />}
+          value={<RateValue value={point.spreadPercent} type="spread" />}
         />
         <Metric
           label="Premium"
-          value={<RateValue value={point.premiumPercent} type="premium" showLevel={false} />}
+          value={<RateValue value={point.premiumPercent} type="premium" />}
         />
       </div>
     </button>
@@ -267,9 +266,6 @@ function TodayBadges() {
     <span className="ml-1 inline-flex items-center gap-1">
       <span className="rounded bg-gold/15 px-1.5 py-0.5 text-[11px] font-medium text-gold">
         Hôm nay
-      </span>
-      <span className="rounded bg-background px-1.5 py-0.5 text-[11px] font-medium text-muted">
-        Tạm tính
       </span>
     </span>
   );
@@ -288,15 +284,11 @@ function RateValue({
   const levelInfo = type === "spread" ? getSpreadLevel(value) : getPremiumLevel(value);
   if (!levelInfo) return <span>—</span>;
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap ${getSpreadPremiumTextClassName(levelInfo)}`}
-    >
-      {prefix ? `${prefix} ` : ""}
-      {formatPercent(value!)}
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      {prefix ? <span className="text-muted">{prefix}</span> : null}
+      <span className="font-medium text-foreground">{formatPercent(value!)}</span>
       {showLevel ? (
-        <span
-          className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${getSpreadPremiumBadgeClassName(levelInfo)}`}
-        >
+        <span className={`text-[11px] font-medium ${getSpreadPremiumTextClassName(levelInfo)}`}>
           {levelInfo.label}
         </span>
       ) : null}
@@ -326,7 +318,7 @@ function HistoryTooltip({
   return (
     <div className="min-w-[245px] rounded-md border border-border bg-background p-3 text-xs shadow-panel">
       <div className="mb-2 font-semibold text-foreground">
-        {dateLabel(point.date)} {point.isToday ? "· Tạm tính" : ""}
+        {dateLabel(point.date)}
       </div>
       <div className="space-y-1 text-foreground">
         <TooltipLine label="Giá" value={formatPrice(point.close)} />
