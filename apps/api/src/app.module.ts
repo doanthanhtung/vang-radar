@@ -9,6 +9,9 @@ import { MarketController } from "./modules/market/market.controller.js";
 import { MarketService } from "./modules/market/market.service.js";
 import { MetricsController } from "./modules/metrics/metrics.controller.js";
 import { MetricsService } from "./modules/metrics/metrics.service.js";
+import { NotificationsController } from "./modules/notifications/notifications.controller.js";
+import { EmailService } from "./modules/notifications/email.service.js";
+import { NotificationsService } from "./modules/notifications/notifications.service.js";
 import { PricesController } from "./modules/prices/prices.controller.js";
 import { GoldPricesController } from "./modules/prices/gold-prices.controller.js";
 import { PricesService } from "./modules/prices/prices.service.js";
@@ -28,6 +31,7 @@ import { RedisService } from "./common/redis.service.js";
     MetricsController,
     SignalsController,
     MarketController,
+    NotificationsController,
     AdminController,
     TelemetryController
   ],
@@ -39,6 +43,8 @@ import { RedisService } from "./common/redis.service.js";
     MetricsService,
     SignalsService,
     MarketService,
+    EmailService,
+    NotificationsService,
     AdminService,
     AuditService,
     AccessLogService

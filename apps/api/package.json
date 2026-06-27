@@ -25,6 +25,7 @@
     "@vang-radar/domain": "workspace:*",
     "@vang-radar/logger": "workspace:*",
     "ioredis": "^5.4.2",
+    "nodemailer": "^9.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.1"

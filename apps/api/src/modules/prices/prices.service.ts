@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { calculateSpreadPct, type HistoryRange, type ProductCode } from "@vang-radar/domain";
 import { PrismaService } from "../../common/prisma.service.js";
+import { RedisService } from "../../common/redis.service.js";
 import { rangeToDate } from "../../common/range.js";
 
 type DailyPrice = {
@@ -18,6 +19,7 @@ type DailyPrice = {
 };
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DAILY_HISTORY_CACHE_TTL_SECONDS = 60;
 
 function vietnamDate(value: Date): string {
   const local = new Date(value.getTime() + VIETNAM_OFFSET_MS);
@@ -32,7 +34,10 @@ function vietnamStartDate(days: number): Date {
 
 @Injectable()
 export class PricesService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(RedisService) private readonly redis: RedisService
+  ) {}
 
   async getLatest() {
     const products = await this.prisma.goldProduct.findMany({
@@ -69,6 +74,14 @@ export class PricesService {
   }
 
   async getDailyHistory(productCode: ProductCode, days: number) {
+    const cacheKey = `product:${productCode}:prices:daily-history:${days}:v1`;
+    const cached = await this.redis.getJson<{
+      type: ProductCode;
+      days: number;
+      data: DailyPrice[];
+    }>(cacheKey);
+    if (cached) return cached;
+
     const since = vietnamStartDate(days);
     const product = await this.prisma.goldProduct.findUnique({
       where: { code: productCode },
@@ -134,6 +147,8 @@ export class PricesService {
         };
       });
 
-    return { type: product.code, days, data };
+    const result = { type: product.code, days, data };
+    await this.redis.setJson(cacheKey, result, DAILY_HISTORY_CACHE_TTL_SECONDS);
+    return result;
   }
 }

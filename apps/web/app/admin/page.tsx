@@ -8,8 +8,10 @@ import {
   ClipboardList,
   Database,
   LogOut,
+  Mail,
   Play,
   RefreshCw,
+  Trash2,
   ServerCog,
   Workflow
 } from "lucide-react";
@@ -19,7 +21,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, Td, Th } from "../../components/ui/table";
-import { getAdminJson, getMarketSummary, postAdminJson } from "../../lib/api-client";
+import { deleteAdminJson, getAdminJson, getMarketSummary, postAdminJson } from "../../lib/api-client";
 import {
   clearAdminCredentials,
   loadAdminCredentials,
@@ -52,6 +54,24 @@ type RunIngestionPayload = {
   message?: string;
 };
 
+type NotificationSubscriber = {
+  id: string;
+  email: string;
+  status: string;
+  buyAlertEnabled: boolean;
+  subscribedAt: string;
+  unsubscribedAt: string | null;
+  lastNotifiedAt: string | null;
+  notificationCount: number;
+};
+
+type NotificationSubscribersPayload = {
+  items: NotificationSubscriber[];
+  total: number;
+  skip: number;
+  take: number;
+};
+
 type UnknownRecord = Record<string, unknown>;
 
 const DEFAULT_SCOPE = "all";
@@ -61,9 +81,11 @@ export default function AdminPage() {
   const [credentials, setCredentials] = useState<AdminCredentials | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [scope, setScope] = useState(DEFAULT_SCOPE);
+  const [subscriberPage, setSubscriberPage] = useState(0);
   const username = credentials?.username ?? "";
   const password = credentials?.password ?? "";
   const hasCredentials = credentials !== null;
+  const subscriberTake = 20;
 
   useEffect(() => {
     setCredentials(loadAdminCredentials());
@@ -87,6 +109,16 @@ export default function AdminPage() {
       getAdminJson("/admin/data-quality/latest", username, password) as Promise<DataQualityPayload>,
     enabled: hasCredentials
   });
+  const subscribers = useQuery({
+    queryKey: ["admin-notification-subscribers", username, subscriberPage],
+    queryFn: async () =>
+      getAdminJson(
+        `/admin/notifications/subscribers?take=${subscriberTake}&skip=${subscriberPage * subscriberTake}`,
+        username,
+        password
+      ) as Promise<NotificationSubscribersPayload>,
+    enabled: hasCredentials
+  });
   const summary = useQuery({ queryKey: ["summary"], queryFn: getMarketSummary });
   const runIngestion = useMutation({
     mutationFn: async () =>
@@ -98,6 +130,13 @@ export default function AdminPage() {
       void queryClient.invalidateQueries({ queryKey: ["admin-jobs"] });
       void queryClient.invalidateQueries({ queryKey: ["admin-data-quality"] });
       void queryClient.invalidateQueries({ queryKey: ["summary"] });
+    }
+  });
+  const removeSubscriber = useMutation({
+    mutationFn: async (subscriberId: string) =>
+      deleteAdminJson(`/admin/notifications/subscribers/${encodeURIComponent(subscriberId)}`, username, password),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin-notification-subscribers"] });
     }
   });
 
@@ -123,6 +162,13 @@ export default function AdminPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/admin/engine"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background"
+          >
+            <Workflow className="h-4 w-4" aria-hidden />
+            Engine rules
+          </a>
           <a
             href="/admin/audit"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background"
@@ -215,6 +261,118 @@ export default function AdminPage() {
           tone="neutral"
         />
       </section>
+
+      <Card className="mb-4">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle>Email nhận cảnh báo</CardTitle>
+            <p className="mt-1 text-sm text-muted">
+              Tổng {subscribers.data?.total ?? 0} email đã đăng ký nhận tín hiệu mua vàng.
+            </p>
+          </div>
+          <QueryBadge
+            loading={subscribers.isLoading || subscribers.isFetching}
+            error={Boolean(subscribers.error)}
+          />
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Email</Th>
+                  <Th>Trạng thái</Th>
+                  <Th>Ngày đăng ký</Th>
+                  <Th>Lần gửi gần nhất</Th>
+                  <Th>Số lần gửi</Th>
+                  <Th>Thao tác</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {(subscribers.data?.items ?? []).length === 0 ? (
+                  <tr>
+                    <Td colSpan={6} className="py-8 text-center text-muted">
+                      {subscribers.isLoading ? "Đang tải danh sách email" : "Chưa có email đăng ký"}
+                    </Td>
+                  </tr>
+                ) : (
+                  subscribers.data?.items.map((subscriber) => (
+                    <tr key={subscriber.id} className="hover:bg-background/70">
+                      <Td>
+                        <div className="flex items-center gap-2 font-medium text-foreground">
+                          <Mail className="h-4 w-4 text-muted" aria-hidden />
+                          <span>{subscriber.email}</span>
+                        </div>
+                      </Td>
+                      <Td>
+                        <Badge
+                          className={
+                            subscriber.status === "active" && subscriber.buyAlertEnabled
+                              ? "border-positive/25 bg-positive/10 text-positive"
+                              : "border-warning/30 bg-warning/10 text-warning"
+                          }
+                        >
+                          {subscriber.status === "active" && subscriber.buyAlertEnabled
+                            ? "Active"
+                            : subscriber.status}
+                        </Badge>
+                      </Td>
+                      <Td>{formatVietnamDateTime(subscriber.subscribedAt)}</Td>
+                      <Td>
+                        {subscriber.lastNotifiedAt
+                          ? formatVietnamDateTime(subscriber.lastNotifiedAt)
+                          : "Chưa gửi"}
+                      </Td>
+                      <Td>{subscriber.notificationCount}</Td>
+                      <Td>
+                        <Button
+                          className="bg-background text-warning ring-1 ring-warning/30 hover:bg-warning/10"
+                          disabled={
+                            removeSubscriber.isPending ||
+                            subscriber.status !== "active" ||
+                            !subscriber.buyAlertEnabled
+                          }
+                          onClick={() => removeSubscriber.mutate(subscriber.id)}
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          Gỡ
+                        </Button>
+                      </Td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </Table>
+          </div>
+          {removeSubscriber.error ? (
+            <p className="mt-3 text-sm text-warning">{getErrorMessage(removeSubscriber.error)}</p>
+          ) : null}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+            <span>
+              Trang {subscriberPage + 1} / {Math.max(1, Math.ceil((subscribers.data?.total ?? 0) / subscriberTake))}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                className="bg-panel text-foreground ring-1 ring-border hover:bg-background"
+                disabled={subscriberPage === 0 || subscribers.isFetching}
+                onClick={() => setSubscriberPage((page) => Math.max(0, page - 1))}
+              >
+                Trước
+              </Button>
+              <Button
+                className="bg-panel text-foreground ring-1 ring-border hover:bg-background"
+                disabled={
+                  subscribers.isFetching ||
+                  (subscriberPage + 1) * subscriberTake >= (subscribers.data?.total ?? 0)
+                }
+                onClick={() => setSubscriberPage((page) => page + 1)}
+              >
+                Sau
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card>
@@ -359,6 +517,7 @@ export default function AdminPage() {
     void health.refetch();
     void jobs.refetch();
     void dataQuality.refetch();
+    void subscribers.refetch();
     void summary.refetch();
   }
 }

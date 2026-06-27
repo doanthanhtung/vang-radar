@@ -5,7 +5,11 @@ const browserBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.PUBLIC_API_BASE_URL ?? serverBaseUrl;
 
 function getBaseUrl(): string {
-  return typeof window === "undefined" ? serverBaseUrl : browserBaseUrl;
+  if (typeof window === "undefined") return serverBaseUrl;
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    return "/api/v1";
+  }
+  return browserBaseUrl;
 }
 
 export interface MarketSummaryProduct {
@@ -93,6 +97,15 @@ export interface DxyHistoryPoint {
   value: number;
 }
 
+export interface NotificationSubscription {
+  email: string;
+  status: string;
+  buyAlertEnabled: boolean;
+  subscribedAt: string;
+  alreadySubscribed: boolean;
+  confirmationEmailSent: boolean;
+}
+
 type ApiRequestInit = RequestInit & {
   next?: {
     revalidate?: number | false;
@@ -126,7 +139,9 @@ export async function getMarketSummary(): Promise<MarketSummary> {
 }
 
 export async function getWorldGoldHistory(days: 7 | 30): Promise<WorldGoldHistoryPoint[]> {
-  return fetchApi<WorldGoldHistoryPoint[]>(`/market/world-gold?days=${days}`, { cache: "no-store" });
+  return fetchApi<WorldGoldHistoryPoint[]>(`/market/world-gold?days=${days}`, {
+    cache: "no-store"
+  });
 }
 
 export async function getUsdVndHistory(days: 7 | 30): Promise<UsdVndHistoryPoint[]> {
@@ -135,6 +150,17 @@ export async function getUsdVndHistory(days: 7 | 30): Promise<UsdVndHistoryPoint
 
 export async function getDxyHistory(days: 7 | 30): Promise<DxyHistoryPoint[]> {
   return fetchApi<DxyHistoryPoint[]>(`/market/dxy?days=${days}`, { cache: "no-store" });
+}
+
+export async function subscribeToGoldAlerts(email: string): Promise<NotificationSubscription> {
+  return fetchApi<NotificationSubscription>("/notifications/subscribe", {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email })
+  });
 }
 
 export async function getMetricHistory(
@@ -176,5 +202,15 @@ export async function postAdminJson(
       "Content-Type": "application/json"
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
+  });
+}
+
+export async function deleteAdminJson(path: string, username: string, password: string) {
+  return fetchApi<unknown>(path, {
+    method: "DELETE",
+    cache: "no-store",
+    headers: {
+      Authorization: `Basic ${btoa(`${username}:${password}`)}`
+    }
   });
 }

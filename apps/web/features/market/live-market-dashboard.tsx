@@ -1,10 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  ChevronDown,
+  ChevronUp,
+  Clock3,
+  Database,
+  Gauge,
+  ShieldAlert
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
-import type { MarketSummary } from "../../lib/api-client";
+import type { GoldPriceHistory, MarketSummary } from "../../lib/api-client";
 import {
   getApiUrl,
   getDxyHistory,
@@ -22,17 +30,14 @@ import {
   toVietnamDateKey,
   type FactorHistoryPoint
 } from "../../lib/factor-history";
-import { formatPercent, formatVnd } from "../../lib/utils";
+import { cn, formatPercent, formatVnd } from "../../lib/utils";
 import {
   average,
-  buildScoreExplanation,
   calculateVangScore,
   enrichSummaryProducts,
-  getVangDecision,
-  toScoreExplanationInput
+  getVangDecision
 } from "../../lib/vang-score";
 import { ProductTable } from "./product-table";
-import { ScoreExplanationCard } from "./score-explanation";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
@@ -42,23 +47,29 @@ type FactorHistoryFormat = "usd" | "vnd" | "percent" | "index";
 export function LiveMarketDashboard({ initialSummary }: { initialSummary: MarketSummary }) {
   const [summary, setSummary] = useState(initialSummary);
   const [expandedFactor, setExpandedFactor] = useState<ExpandedFactor | null>(null);
-  const [factorHistory, setFactorHistory] = useState<Partial<Record<ExpandedFactor, FactorHistoryPoint[]>>>(
-    {}
-  );
+  const [factorHistory, setFactorHistory] = useState<
+    Partial<Record<ExpandedFactor, FactorHistoryPoint[]>>
+  >({});
   const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
   const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
+  const productHistoryPromiseRef = useRef<Record<string, Promise<GoldPriceHistory>>>({});
+  const prefetchedFactorKeyRef = useRef<string | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
 
   useEffect(() => setSummary(initialSummary), [initialSummary]);
 
   useEffect(() => {
-    const events = new EventSource(getApiUrl("/market/summary/stream"));
-    events.addEventListener("summary", (event) => {
-      try {
-        setSummary(JSON.parse(event.data) as MarketSummary);
-      } catch {}
-    });
+    const streamUrl = getApiUrl("/market/summary/stream");
+    let events: EventSource | null = null;
+    if (new URL(streamUrl, window.location.origin).origin === window.location.origin) {
+      events = new EventSource(streamUrl);
+      events.addEventListener("summary", (event) => {
+        try {
+          setSummary(JSON.parse(event.data) as MarketSummary);
+        } catch {}
+      });
+    }
     const pollFallback = setInterval(
       () => void refreshSummary().catch(() => undefined),
       SUMMARY_POLL_FALLBACK_MS
@@ -68,7 +79,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     };
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
-      events.close();
+      events?.close();
       clearInterval(pollFallback);
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
@@ -96,17 +107,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     summary.products.length > 0 && summary.world.xauUsdPerOz > 0 && summary.world.usdVnd > 0;
   const isStale = Date.now() - new Date(summary.time).getTime() > STALE_AFTER_MS;
   const decision = getVangDecision(isDataReady, vangScore, priceGap, averagePremium);
-  const scoreExplanation = useMemo(() => {
-    const dojiProduct = liveProducts.find((product) => product.code === "DOJI_RING_9999");
-    if (!isDataReady || !dojiProduct) return buildScoreExplanation(null);
-
-    return buildScoreExplanation(toScoreExplanationInput(dojiProduct, summary.world));
-  }, [liveProducts, summary.world, isDataReady]);
-
-  const productCodes = useMemo(
-    () => liveProducts.map((product) => product.code),
-    [liveProducts]
-  );
+  const productCodes = useMemo(() => liveProducts.map((product) => product.code), [liveProducts]);
   const todayKey = useMemo(() => toVietnamDateKey(summary.time), [summary.time]);
 
   const liveFactorValues = useMemo(
@@ -132,46 +133,75 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     setFactorHistory({});
   }, [todayKey]);
 
+  const getProductHistory = useCallback((code: string) => {
+    productHistoryPromiseRef.current[code] ??= getGoldPriceHistory(code, 7);
+    return productHistoryPromiseRef.current[code]!;
+  }, []);
+
+  const fetchFactorHistory = useCallback(
+    async (factor: ExpandedFactor): Promise<FactorHistoryPoint[]> => {
+      if (factor === "xau") {
+        return buildWorldGoldDailyHistory(await getWorldGoldHistory(7));
+      }
+
+      if (factor === "dxy") {
+        return buildDxyDailyHistory(await getDxyHistory(7));
+      }
+
+      if (factor === "usd") {
+        return buildFxDailyHistory(await getUsdVndHistory(7));
+      }
+
+      const histories = await Promise.all(productCodes.map((code) => getProductHistory(code)));
+      return buildAverageDailyGoldHistory(
+        histories,
+        factor === "premium" ? "premiumPercent" : "spreadPercent"
+      );
+    },
+    [getProductHistory, productCodes]
+  );
+
   const loadFactorHistory = useCallback(
     async (factor: ExpandedFactor) => {
       setFactorHistoryError(null);
       setFactorHistoryLoading(factor);
       try {
-        if (factor === "xau") {
-          const points = await getWorldGoldHistory(7);
-          setFactorHistory((current) => ({
-            ...current,
-            xau: buildWorldGoldDailyHistory(points)
-          }));
-        } else if (factor === "dxy") {
-          const points = await getDxyHistory(7);
-          setFactorHistory((current) => ({ ...current, dxy: buildDxyDailyHistory(points) }));
-        } else if (factor === "usd") {
-          const points = await getUsdVndHistory(7);
-          setFactorHistory((current) => ({
-            ...current,
-            usd: buildFxDailyHistory(points)
-          }));
-        } else {
-          const histories = await Promise.all(
-            productCodes.map((code) => getGoldPriceHistory(code, 7))
-          );
-          setFactorHistory((current) => ({
-            ...current,
-            [factor]: buildAverageDailyGoldHistory(
-              histories,
-              factor === "premium" ? "premiumPercent" : "spreadPercent"
-            )
-          }));
-        }
+        const points = await fetchFactorHistory(factor);
+        setFactorHistory((current) => ({ ...current, [factor]: points }));
       } catch {
         setFactorHistoryError(factor);
       } finally {
         setFactorHistoryLoading(null);
       }
     },
-    [productCodes]
+    [fetchFactorHistory]
   );
+
+  useEffect(() => {
+    const prefetchKey = `${todayKey}:${productCodes.join(",")}`;
+    if (
+      !isDataReady ||
+      productCodes.length === 0 ||
+      prefetchedFactorKeyRef.current === prefetchKey
+    ) {
+      return;
+    }
+
+    prefetchedFactorKeyRef.current = prefetchKey;
+    const timeout = window.setTimeout(() => {
+      const factors: ExpandedFactor[] = ["xau", "usd", "dxy", "premium", "spread"];
+      void Promise.allSettled(
+        factors.map(async (factor) => {
+          const points = await fetchFactorHistory(factor);
+          setFactorHistory((current) =>
+            current[factor] ? current : { ...current, [factor]: points }
+          );
+        })
+      );
+    }, 900);
+
+    return () => window.clearTimeout(timeout);
+  }, [fetchFactorHistory, isDataReady, productCodes, todayKey]);
 
   const toggleFactor = (factor: ExpandedFactor) => {
     const next = expandedFactor === factor ? null : factor;
@@ -180,57 +210,79 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   };
 
   return (
-    <main id="main-content" className="pb-10">
+    <main id="main-content" className="pb-12">
       <section className="dashboard-visual">
-        <div className="mx-auto max-w-4xl px-4 py-10 text-center text-white md:py-14">
-          <p className="text-sm font-medium uppercase tracking-wide text-white/75">
-            Hôm nay có nên mua vàng không?
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight text-gold md:text-6xl">
-            {decision.title}
-          </h1>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <span className="text-sm text-white/75">VangScore</span>
-            <strong className="rounded-full border border-gold/50 bg-gold/10 px-3 py-1 text-lg text-gold">
-              {decision.score === null ? "—" : `${decision.score}/100`}
-            </strong>
-            <HelpTooltip text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
+        <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-12 pt-8 text-white md:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)] md:items-end md:pb-14 md:pt-12">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
+              <Activity className="h-3.5 w-3.5 text-gold" aria-hidden />
+              Dashboard nghiên cứu giá vàng
+            </div>
+            <h1 className="mt-5 max-w-2xl text-4xl font-semibold leading-[0.98] tracking-tight text-foreground md:text-6xl">
+              {decision.title}
+            </h1>
+            <p className="mt-5 max-w-2xl text-pretty text-base leading-7 text-slate-200 md:text-lg">
+              {decision.reason}
+            </p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+              Gợi ý nghiên cứu: {decision.action}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2 text-xs text-slate-300">
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.1] bg-slate-950/35 px-2.5 py-1.5">
+                <Clock3 className="h-3.5 w-3.5 text-gold" aria-hidden />
+                Cập nhật {formatVietnamTime(summary.time)}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.1] bg-slate-950/35 px-2.5 py-1.5">
+                <Database className="h-3.5 w-3.5 text-gold" aria-hidden />
+                {liveProducts.length} sản phẩm theo dõi
+              </span>
+              {isStale ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-300/30 bg-amber-300/10 px-2.5 py-1.5 text-amber-100">
+                  <ShieldAlert className="h-3.5 w-3.5" aria-hidden />
+                  Dữ liệu có thể chưa mới
+                </span>
+              ) : null}
+            </div>
           </div>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-white/90 md:text-lg">
-            {decision.reason}
-          </p>
-          <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-white/70">
-            Gợi ý: {decision.action}
-          </p>
-          <div className="mx-auto mt-7 grid max-w-2xl grid-cols-1 divide-y divide-white/20 overflow-hidden rounded-xl border border-white/20 bg-slate-950/20 text-left sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <QuickMetric
-              label="Premium TB"
-              value={formatPercent(averagePremium)}
-              help="Vàng trong nước đang cao hoặc thấp hơn giá thế giới quy đổi."
-            />
-            <QuickMetric
-              label="Spread TB"
-              value={formatPercent(averageSpread)}
-              help="Chênh lệch giữa giá bán ra và mua vào; spread càng cao thì mua xong bán lại càng thiệt."
-            />
-            <QuickMetric
-              label="Chênh với thế giới"
-              value={isDataReady ? formatVnd(priceGap) : "—"}
-            />
-          </div>
-          <p className="mt-5 text-xs text-white/65">
-            Cập nhật lúc {formatVietnamTime(summary.time)}
-          </p>
-          {isStale ? <p className="mt-2 text-xs text-amber-200">Dữ liệu có thể chưa mới.</p> : null}
+
+          <aside className="research-card rounded-lg p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium text-muted">VangScore tổng hợp</p>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <strong className="text-4xl font-semibold tracking-tight text-gold">
+                    {decision.score === null ? "—" : decision.score}
+                  </strong>
+                  <span className="text-sm text-muted">/100</span>
+                </div>
+              </div>
+              <HelpTooltip text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <SummaryMetric
+                label="Giá thế giới"
+                value={formatVndSafe(summary.world.worldVndPerLuong)}
+              />
+              <SummaryMetric label="Giá bán TB" value={formatVndSafe(averageSell)} />
+              <SummaryMetric label="Chênh lệch" value={formatVndSafe(priceGap)} tone="warn" />
+              <SummaryMetric label="Premium TB" value={formatPercent(averagePremium)} tone="warn" />
+            </div>
+          </aside>
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 pt-6">
-        <Card className="bg-panel/80">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Các yếu tố ảnh hưởng</CardTitle>
+      <section className="relative z-10 mx-auto -mt-5 max-w-7xl px-4 pt-0">
+        <Card>
+          <CardHeader className="flex flex-col gap-1 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <CardTitle>Các yếu tố ảnh hưởng</CardTitle>
+              <p className="mt-1 text-sm text-muted">
+                Mở từng yếu tố để xem xu hướng 7 ngày và kiểm tra bối cảnh trước khi so sánh sản
+                phẩm.
+              </p>
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4">
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
               <ExpandableFactor
                 label="XAU/USD"
@@ -270,6 +322,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 value={formatPercent(averageSpread)}
                 expanded={expandedFactor === "spread"}
                 onToggle={() => toggleFactor("spread")}
+                className="col-span-2 sm:col-span-1"
               />
             </div>
             {expandedFactor ? (
@@ -282,8 +335,8 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                       : expandedFactor === "dxy"
                         ? "index"
                         : expandedFactor === "usd"
-                        ? "vnd"
-                        : "percent"
+                          ? "vnd"
+                          : "percent"
                   }
                   loading={factorHistoryLoading === expandedFactor}
                   error={factorHistoryError === expandedFactor}
@@ -294,27 +347,27 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
         </Card>
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 py-6">
-        <ScoreExplanationCard
-          key={`${scoreExplanation.score ?? "na"}-${scoreExplanation.signal ?? "na"}-${summary.time}`}
-          explanation={scoreExplanation}
-        />
+      <section className="mx-auto max-w-7xl px-4 pb-6 pt-6">
+        <div className="mb-4 flex flex-col gap-1 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-foreground">
+              Bảng so sánh sản phẩm
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              Bấm vào từng dòng để xem lịch sử 7 ngày, premium và spread theo ngày.
+            </p>
+          </div>
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-muted">
+            <Gauge className="h-3.5 w-3.5 text-gold" aria-hidden />
+            Điểm càng cao càng thuận lợi
+          </span>
+        </div>
+        <ProductTable products={liveProducts} asOf={summary.time} />
       </section>
 
-      <section className="mx-auto max-w-5xl px-4 pb-6">
-        <Card className="bg-panel/80">
-          <CardHeader>
-            <CardTitle>Giá bán theo sản phẩm</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ProductTable products={liveProducts} asOf={summary.time} />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-4 pt-6">
-        <details className="text-sm text-muted">
-          <summary className="cursor-pointer font-medium text-foreground">
+      <section className="mx-auto max-w-7xl px-4 pt-4">
+        <details className="research-card rounded-lg p-4 text-sm text-muted">
+          <summary className="cursor-pointer font-medium text-foreground transition-colors hover:text-gold">
             Xem cách tính & nguồn dữ liệu
           </summary>
           <div className="mt-3 space-y-2 leading-6">
@@ -331,6 +384,33 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
         </details>
       </section>
     </main>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  tone = "default"
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "warn";
+}) {
+  return (
+    <div className="metric-panel rounded-md px-3 py-2.5">
+      <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 truncate text-sm font-semibold text-foreground",
+          tone === "warn" && "text-gold"
+        )}
+        title={value}
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 
@@ -365,66 +445,49 @@ function FactorHistoryTable({
     <div className="space-y-3">
       <FactorSparkline points={points} />
       <div className="overflow-hidden rounded-md border border-border/60">
-      <table className="w-full table-fixed text-sm">
-        <thead className="bg-background">
-          <tr className="border-b border-border/60 text-xs text-muted">
-            <th className="w-[42%] px-3 py-2 text-left font-medium">Ngày</th>
-            <th className="w-[33%] px-3 py-2 text-right font-medium">Giá trị</th>
-            <th className="w-[25%] px-3 py-2 text-right font-medium">
-              {format === "percent" ? "Biến đổi (pp)" : "Biến đổi"}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {newestFirstPoints.map((point) => (
-            <tr key={point.date} className="border-b border-border/50 last:border-b-0">
-              <td className="px-3 py-2 text-muted">{formatHistoryDate(point.date)}</td>
-              <td className="px-3 py-2 text-right font-medium text-foreground">
-                {formatHistoryValue(point.value, format)}
-              </td>
-              <td
-                className={`px-3 py-2 text-right text-xs font-medium ${historyChangeClass(point.change)}`}
-              >
-                {formatHistoryChange(point.change, format)}
-              </td>
+        <table className="w-full table-fixed text-sm">
+          <thead className="bg-background">
+            <tr className="border-b border-border/60 text-xs text-muted">
+              <th className="w-[42%] px-3 py-2 text-left font-medium">Ngày</th>
+              <th className="w-[33%] px-3 py-2 text-right font-medium">Giá trị</th>
+              <th className="w-[25%] px-3 py-2 text-right font-medium">
+                {format === "percent" ? "Biến đổi (pp)" : "Biến đổi"}
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {newestFirstPoints.map((point) => (
+              <tr key={point.date} className="border-b border-border/50 last:border-b-0">
+                <td className="px-3 py-2 text-muted">{formatHistoryDate(point.date)}</td>
+                <td className="px-3 py-2 text-right font-medium text-foreground">
+                  {formatHistoryValue(point.value, format)}
+                </td>
+                <td
+                  className={`px-3 py-2 text-right text-xs font-medium ${historyChangeClass(point.change)}`}
+                >
+                  {formatHistoryChange(point.change, format)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-function QuickMetric({
-  label,
-  value,
-  help,
-}: {
-  label: string;
-  value: string;
-  help?: string;
-}) {
-  return (
-    <div className="min-w-0 px-3 py-3 sm:px-5">
-      <div className="flex items-center gap-1 text-xs text-white/70">
-        {label}
-        {help ? <HelpTooltip text={help} /> : null}
-      </div>
-      <div className="mt-1 break-words text-base font-semibold tabular-nums sm:text-xl">{value}</div>
-    </div>
-  );
-}
 function ExpandableFactor({
   label,
   value,
   expanded,
-  onToggle
+  onToggle,
+  className
 }: {
   label: string;
   value: string;
   expanded: boolean;
   onToggle: () => void;
+  className?: string;
 }) {
   const Icon = expanded ? ChevronUp : ChevronDown;
 
@@ -433,7 +496,10 @@ function ExpandableFactor({
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
-      className="rounded-lg bg-background/85 p-3 text-left transition duration-200 hover:bg-white/[0.06] active:scale-[0.98]"
+      className={cn(
+        "rounded-md border border-white/[0.04] bg-background/75 p-3 text-left transition duration-200 hover:border-gold/25 hover:bg-white/[0.06] active:scale-[0.98]",
+        className
+      )}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-muted">{label}</div>
@@ -518,9 +584,17 @@ function FactorSparkline({ points }: { points: FactorHistoryPoint[] }) {
     <div className="overflow-hidden rounded-md border border-border/60 bg-background/50 px-3 py-2">
       <div className="mb-1 flex items-center justify-between text-[11px] text-muted">
         <span>Xu hướng 7 ngày</span>
-        <span className="tabular-nums">{formatHistoryDate(firstPoint.date)} — {formatHistoryDate(lastPoint.date)}</span>
+        <span className="tabular-nums">
+          {formatHistoryDate(firstPoint.date)} — {formatHistoryDate(lastPoint.date)}
+        </span>
       </div>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-16 w-full" role="img" aria-label="Biểu đồ xu hướng 7 ngày">
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="h-16 w-full"
+        role="img"
+        aria-label="Biểu đồ xu hướng 7 ngày"
+      >
         <defs>
           <linearGradient id="factor-fill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#facc15" stopOpacity="0.3" />
@@ -528,7 +602,13 @@ function FactorSparkline({ points }: { points: FactorHistoryPoint[] }) {
           </linearGradient>
         </defs>
         <polygon points={`0,100 ${coordinates} 100,100`} fill="url(#factor-fill)" />
-        <polyline points={coordinates} fill="none" stroke="#facc15" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+        <polyline
+          points={coordinates}
+          fill="none"
+          stroke="#facc15"
+          strokeWidth="2.5"
+          vectorEffect="non-scaling-stroke"
+        />
       </svg>
     </div>
   );
@@ -540,4 +620,8 @@ function formatVietnamTime(value: string): string {
     hour12: false,
     timeZone: "Asia/Ho_Chi_Minh"
   }).format(new Date(value));
+}
+
+function formatVndSafe(value: number): string {
+  return Number.isFinite(value) && value !== 0 ? formatVnd(value) : "—";
 }

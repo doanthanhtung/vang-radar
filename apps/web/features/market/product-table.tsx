@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronUp, ArrowDown, ArrowUp } from "lucide-react";
-import { useState } from "react";
+import { ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
 import { getGoldPriceHistory } from "../../lib/api-client";
 import { applyLiveGoldPriceHistory, toVietnamDateKey } from "../../lib/factor-history";
@@ -16,16 +16,23 @@ type HistoryState =
   | { status: "success"; data: GoldPriceHistory }
   | { status: "error"; message: string };
 
-export function ProductTable({ products, asOf }: { products: MarketSummaryProduct[]; asOf: string }) {
-  const [expandedCode, setExpandedCode] = useState<string | null>(null);
+export function ProductTable({
+  products,
+  asOf
+}: {
+  products: MarketSummaryProduct[];
+  asOf: string;
+}) {
+  const [selectedCode, setSelectedCode] = useState<string | null>(products[0]?.code ?? null);
   const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
+  const detailPanelRef = useRef<HTMLElement | null>(null);
 
-  const toggleProduct = (code: string) => {
-    if (expandedCode === code) {
-      setExpandedCode(null);
-      return;
-    }
-    setExpandedCode(code);
+  const selectedProduct = useMemo(
+    () => products.find((product) => product.code === selectedCode) ?? products[0] ?? null,
+    [products, selectedCode]
+  );
+
+  const loadHistory = (code: string) => {
     if (historyByCode[code]) return;
 
     setHistoryByCode((current) => ({ ...current, [code]: { status: "loading" } }));
@@ -39,6 +46,39 @@ export function ProductTable({ products, asOf }: { products: MarketSummaryProduc
           [code]: { status: "error", message: "Không thể tải dữ liệu lịch sử. Vui lòng thử lại." }
         }))
       );
+  };
+
+  useEffect(() => {
+    if (products.length === 0) {
+      setSelectedCode(null);
+      return;
+    }
+
+    if (!selectedProduct) {
+      setSelectedCode(products[0]!.code);
+    }
+  }, [products, selectedProduct]);
+
+  useEffect(() => {
+    if (selectedProduct) loadHistory(selectedProduct.code);
+  }, [selectedProduct?.code]);
+
+  const selectProduct = (code: string) => {
+    setSelectedCode(code);
+    loadHistory(code);
+    window.setTimeout(() => {
+      const panel = detailPanelRef.current;
+      if (!panel) return;
+
+      const rect = panel.getBoundingClientRect();
+      const stickyHeaderOffset = 76;
+      const isMostlyVisible =
+        rect.top >= stickyHeaderOffset && rect.top < window.innerHeight * 0.72;
+      if (isMostlyVisible) return;
+
+      const targetTop = window.scrollY + rect.top - stickyHeaderOffset;
+      window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+    }, 0);
   };
 
   const retryHistory = (code: string) => {
@@ -60,7 +100,8 @@ export function ProductTable({ products, asOf }: { products: MarketSummaryProduc
       <div className="rounded-lg border border-dashed border-border bg-background/35 px-5 py-10 text-center">
         <p className="font-medium text-foreground">Chưa có bảng giá để so sánh</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
-          Dữ liệu giá từ các thương hiệu vàng sẽ xuất hiện ở đây ngay khi nguồn cung cấp bản cập nhật mới.
+          Dữ liệu giá từ các thương hiệu vàng sẽ xuất hiện ở đây ngay khi nguồn cung cấp bản cập
+          nhật mới.
         </p>
       </div>
     );
@@ -68,18 +109,20 @@ export function ProductTable({ products, asOf }: { products: MarketSummaryProduc
 
   return (
     <>
-      <div className="space-y-2 md:hidden">
+      <div className="space-y-3 md:hidden">
         {products.map((product) => {
-          const isExpanded = expandedCode === product.code;
+          const isSelected = selectedProduct?.code === product.code;
           return (
             <article
               key={product.code}
-              className="overflow-hidden rounded-xl border border-border/80 bg-panel/75 shadow-[0_12px_30px_rgba(2,6,23,0.18)]"
+              className={`research-card overflow-hidden rounded-lg ${
+                isSelected ? "ring-1 ring-gold/35" : ""
+              }`}
             >
               <button
                 type="button"
-                onClick={() => toggleProduct(product.code)}
-                aria-expanded={isExpanded}
+                onClick={() => selectProduct(product.code)}
+                aria-pressed={isSelected}
                 className="w-full p-4 text-left transition duration-200 hover:bg-white/[0.04] active:scale-[0.995]"
               >
                 <div className="flex items-start justify-between gap-3">
@@ -87,9 +130,9 @@ export function ProductTable({ products, asOf }: { products: MarketSummaryProduc
                     <div className="font-medium text-foreground">{product.name}</div>
                     <div className="text-xs text-muted">{product.brand}</div>
                   </div>
-                  <ExpandIcon expanded={isExpanded} />
+                  <SelectionMark selected={isSelected} />
                 </div>
-                <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-3 text-sm">
+                <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
                   <ProductMetric
                     label="Bán ra"
                     value={
@@ -104,111 +147,156 @@ export function ProductTable({ products, asOf }: { products: MarketSummaryProduc
                   <ProductMetric label="Điểm" value={<ScoreValue product={product} />} />
                 </dl>
               </button>
-              {isExpanded ? (
-                <div className="border-t border-border p-3">
-                  <HistoryContent
-                    state={historyByCode[product.code]}
-                    retry={() => retryHistory(product.code)}
-                    product={product}
-                    asOf={asOf}
-                  />
-                </div>
-              ) : null}
             </article>
           );
         })}
       </div>
 
-      <div className="hidden overflow-x-auto rounded-xl border border-border/80 bg-panel/75 shadow-[0_12px_30px_rgba(2,6,23,0.18)] md:block">
-        <Table>
-          <thead className="bg-background/85">
+      <div className="research-card hidden max-h-[48rem] overflow-auto rounded-lg md:block">
+        <Table className="table-sticky-header">
+          <thead>
             <tr>
               <Th>Sản phẩm</Th>
-              <Th>Bán ra</Th>
-              <Th><MetricLabel label="Premium" description="Mức giá bán trong nước cao hoặc thấp hơn giá thế giới quy đổi." /></Th>
-              <Th><MetricLabel label="Spread" description="Chênh lệch giữa giá mua vào và bán ra." /></Th>
-              <Th><MetricLabel label="Điểm" description="Điểm tín hiệu mua (0–100) và nhãn tín hiệu của từng sản phẩm." /></Th>
+              <Th className="text-right">Bán ra</Th>
+              <Th className="text-right">
+                <MetricLabel
+                  label="Premium"
+                  description="Mức giá bán trong nước cao hoặc thấp hơn giá thế giới quy đổi."
+                />
+              </Th>
+              <Th className="text-right">
+                <MetricLabel label="Spread" description="Chênh lệch giữa giá mua vào và bán ra." />
+              </Th>
+              <Th className="text-right">
+                <MetricLabel
+                  label="Điểm"
+                  description="Điểm tín hiệu mua (0–100) và nhãn tín hiệu của từng sản phẩm."
+                />
+              </Th>
             </tr>
           </thead>
           <tbody>
             {products.map((product) => {
-              const isExpanded = expandedCode === product.code;
+              const isSelected = selectedProduct?.code === product.code;
               return (
-                <ProductRows
+                <ProductRow
                   key={product.code}
                   product={product}
-                  expanded={isExpanded}
-                  state={historyByCode[product.code]}
-                  onToggle={() => toggleProduct(product.code)}
-                  onRetry={() => retryHistory(product.code)}
-                  asOf={asOf}
+                  selected={isSelected}
+                  onSelect={() => selectProduct(product.code)}
                 />
               );
             })}
           </tbody>
         </Table>
       </div>
+
+      {selectedProduct ? (
+        <section
+          ref={detailPanelRef}
+          className="research-card mt-4 overflow-hidden rounded-lg"
+          id="selected-product-history"
+        >
+          <div className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+                Chi tiết sản phẩm đang chọn
+              </p>
+              <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
+                {selectedProduct.name}
+              </h3>
+              <p className="mt-1 text-sm text-muted">
+                Xem lịch sử 7 ngày để đối chiếu giá bán, premium và spread theo từng ngày.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 sm:text-right">
+              <div>
+                <div className="text-xs text-muted">Điểm hiện tại</div>
+                <div className="mt-1 font-semibold text-foreground">
+                  {selectedProduct.score}/100
+                </div>
+              </div>
+              <SignalBadge signal={selectedProduct.signal} />
+            </div>
+          </div>
+          <div className="p-3 sm:p-4">
+            <HistoryContent
+              state={historyByCode[selectedProduct.code]}
+              retry={() => retryHistory(selectedProduct.code)}
+              product={selectedProduct}
+              asOf={asOf}
+            />
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }
 
-function ProductRows({
+function ProductRow({
   product,
-  expanded,
-  state,
-  onToggle,
-  onRetry,
-  asOf
+  selected,
+  onSelect
 }: {
   product: MarketSummaryProduct;
-  expanded: boolean;
-  state: HistoryState | undefined;
-  onToggle: () => void;
-  onRetry: () => void;
-  asOf: string;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <>
-      <tr onClick={onToggle} className="cursor-pointer transition-colors hover:bg-white/[0.04]">
-        <Td>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggle();
-            }}
-            aria-expanded={expanded}
-            aria-controls={`price-history-${product.code}`}
-            className="flex w-full items-start gap-2 text-left"
-          >
-            <ExpandIcon expanded={expanded} />
-            <div>
-              <div className="font-medium text-foreground hover:text-gold">{product.name}</div>
-              <div className="text-xs text-muted">{product.brand}</div>
-            </div>
-          </button>
-        </Td>
-        <Td>
-          <PriceWithChange price={product.sellPrice} previousClose={product.previousDayClose?.sellPriceVnd} />
-        </Td>
-        <Td>
-          <MetricValue value={product.premiumSellPct} />
-        </Td>
-        <Td>
-          <MetricValue value={product.spreadPct} />
-        </Td>
-        <Td>
-          <ScoreValue product={product} />
-        </Td>
-      </tr>
-      {expanded ? (
-        <tr id={`price-history-${product.code}`}>
-          <Td colSpan={5} className="bg-background/70 p-3">
-            <HistoryContent state={state} retry={onRetry} product={product} asOf={asOf} />
-          </Td>
-        </tr>
-      ) : null}
-    </>
+    <tr
+      onClick={onSelect}
+      aria-selected={selected}
+      className={`cursor-pointer transition-colors hover:bg-white/[0.045] ${
+        selected ? "bg-gold/[0.055]" : ""
+      }`}
+    >
+      <Td>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+          }}
+          aria-controls="selected-product-history"
+          aria-pressed={selected}
+          className="flex w-full items-start gap-2 text-left"
+        >
+          <SelectionMark selected={selected} />
+          <div>
+            <div className="font-medium text-foreground hover:text-gold">{product.name}</div>
+            <div className="text-xs text-muted">{product.brand}</div>
+          </div>
+        </button>
+      </Td>
+      <Td className="text-right">
+        <PriceWithChange
+          price={product.sellPrice}
+          previousClose={product.previousDayClose?.sellPriceVnd}
+        />
+      </Td>
+      <Td className="text-right">
+        <MetricValue value={product.premiumSellPct} />
+      </Td>
+      <Td className="text-right">
+        <MetricValue value={product.spreadPct} />
+      </Td>
+      <Td className="text-right">
+        <ScoreValue product={product} />
+      </Td>
+    </tr>
+  );
+}
+
+function SelectionMark({ selected }: { selected: boolean }) {
+  if (selected) {
+    return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />;
+  }
+
+  return (
+    <span
+      className="mt-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/[0.14]"
+      aria-hidden
+    />
   );
 }
 
@@ -247,26 +335,24 @@ function HistoryContent({
   );
 }
 
-function ExpandIcon({ expanded }: { expanded: boolean }) {
-  const Icon = expanded ? ChevronUp : ChevronDown;
-  return <Icon className="h-4 w-4 shrink-0 text-gold" aria-hidden />;
-}
-
-function ProductMetric({ label, value }: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function ProductMetric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-1 break-words font-medium text-foreground">
-        {value}
-      </dd>
+    <div className="metric-panel min-w-0 rounded-md px-3 py-2">
+      <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+        {label}
+      </dt>
+      <dd className="mt-1 break-words font-semibold text-foreground">{value}</dd>
     </div>
   );
 }
 
-function PriceWithChange({ price, previousClose }: { price: number; previousClose: number | undefined }) {
+function PriceWithChange({
+  price,
+  previousClose
+}: {
+  price: number;
+  previousClose: number | undefined;
+}) {
   const hasPreviousClose = typeof previousClose === "number" && Number.isFinite(previousClose);
   const change = hasPreviousClose ? price - previousClose : 0;
   const isUp = change > 0;
@@ -274,10 +360,12 @@ function PriceWithChange({ price, previousClose }: { price: number; previousClos
   const Icon = isUp ? ArrowUp : ArrowDown;
   const color = isUp ? "text-positive" : isDown ? "text-red-400" : "text-muted";
   return (
-    <div>
-      <div className="font-medium text-foreground">{formatVnd(price)}</div>
+    <div className="flex flex-col items-start md:items-end">
+      <div className="font-semibold text-foreground">{formatVnd(price)}</div>
       {hasPreviousClose && change !== 0 ? (
-        <div className={`mt-1 flex items-center gap-0.5 text-[11px] font-medium ${color}`}>
+        <div
+          className={`mt-1 inline-flex items-center justify-end gap-0.5 text-[11px] font-medium ${color}`}
+        >
           <Icon className="h-3 w-3" aria-hidden />
           {`${isUp ? "+" : "−"}${formatVnd(Math.abs(change))}`}
         </div>
@@ -287,23 +375,21 @@ function PriceWithChange({ price, previousClose }: { price: number; previousClos
 }
 
 function MetricValue({ value }: { value: number }) {
-  return (
-    <div className="font-medium text-foreground">{formatPercent(value)}</div>
-  );
+  return <div className="font-medium text-foreground">{formatPercent(value)}</div>;
 }
 
 function ScoreValue({ product }: { product: MarketSummaryProduct }) {
   return (
-    <div className="space-y-1.5">
-      <div className="font-medium text-foreground">{product.score}/100</div>
-      <SignalBadge signal={product.signal} />
+    <div className="flex flex-col items-start gap-1.5 md:items-end">
+      <div className="font-semibold text-foreground">{product.score}/100</div>
+      <SignalBadge signal={product.signal} compact />
     </div>
   );
 }
 
 function MetricLabel({ label, description }: { label: string; description: string }) {
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center justify-end gap-1">
       {label}
       <HelpTooltip text={description} className="text-muted" />
     </span>

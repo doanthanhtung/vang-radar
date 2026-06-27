@@ -10,19 +10,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0f172a",
+        background: "#0b1220",
         foreground: "#f8fafc",
-        border: "#334155",
-        muted: "#cbd5e1",
-        panel: "#1e293b",
-        gold: "#facc15",
-        positive: "#22c55e",
-        warning: "#f97316",
+        border: "#2a3648",
+        muted: "#aab6c8",
+        panel: "#162033",
+        gold: "#d9b159",
+        positive: "#4ade80",
+        warning: "#f59e0b",
         caution: "#ef4444",
         unreliable: "#94a3b8"
       },
       boxShadow: {
-        panel: "0 18px 45px rgba(2, 6, 23, 0.34)"
+        panel: "0 22px 55px rgba(2, 6, 23, 0.28)"
       }
     }
   },

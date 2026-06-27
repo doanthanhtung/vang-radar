@@ -241,6 +241,24 @@ model SiteAccessLog {
   @@map("site_access_logs")
 }
 
+model NotificationSubscriber {
+  id                 String    @id @default(uuid()) @db.Uuid
+  email              String    @unique
+  status             String    @default("active")
+  buyAlertEnabled    Boolean   @default(true) @map("buy_alert_enabled")
+  source             String    @default("web")
+  subscribedAt       DateTime  @default(now()) @map("subscribed_at") @db.Timestamptz
+  unsubscribedAt     DateTime? @map("unsubscribed_at") @db.Timestamptz
+  lastNotifiedAt     DateTime? @map("last_notified_at") @db.Timestamptz
+  notificationCount  Int       @default(0) @map("notification_count")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([status, buyAlertEnabled])
+  @@index([lastNotifiedAt])
+  @@map("notification_subscribers")
+}
+
 model BotAccessLog {
   id             String   @id @default(uuid()) @db.Uuid
   accessedAt     DateTime @default(now()) @map("accessed_at") @db.Timestamptz

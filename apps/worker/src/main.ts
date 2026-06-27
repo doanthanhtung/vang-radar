@@ -7,6 +7,7 @@ import {
   fetchMacroIndicators,
   fetchWorldGold
 } from "./jobs/ingestion.js";
+import { sendBuyAlerts } from "./jobs/buy-alerts.js";
 import { registerQueues, scheduleJobs } from "./queues/register.js";
 import { generateLatestSignals } from "./signal-engine/generate-signals.js";
 
@@ -19,6 +20,7 @@ export async function runOnce() {
   await fetchDomesticGold(prisma);
   await calculateLatestMetrics(prisma);
   await generateLatestSignals(prisma);
+  await sendBuyAlerts(prisma);
 }
 
 async function main() {

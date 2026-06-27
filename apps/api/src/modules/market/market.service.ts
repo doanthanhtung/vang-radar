@@ -15,6 +15,7 @@ type SummaryLike = {
 };
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const HISTORY_CACHE_TTL_SECONDS = 60;
 
 function vietnamStartOfToday(): Date {
   const localNow = new Date(Date.now() + VIETNAM_OFFSET_MS);
@@ -228,13 +229,12 @@ export class MarketService {
           spreadP = calculateSpreadPct(sell, buy);
 
           const previousClose = previousDayCloses.get(product.id);
-          const previousDayClose =
-            previousClose
-              ? {
-                  buyPriceVnd: Number(previousClose.buyPriceVnd),
-                  sellPriceVnd: Number(previousClose.sellPriceVnd)
-                }
-              : null;
+          const previousDayClose = previousClose
+            ? {
+                buyPriceVnd: Number(previousClose.buyPriceVnd),
+                sellPriceVnd: Number(previousClose.sellPriceVnd)
+              }
+            : null;
 
           return {
             code: product.code,
@@ -251,9 +251,7 @@ export class MarketService {
             confidence: Number(signal?.confidence ?? 0),
             reasons: Array.isArray(signal?.reasons) ? signal.reasons : [],
             premiumPercentile180d:
-              metric.premiumPercentile180d === null
-                ? null
-                : Number(metric.premiumPercentile180d),
+              metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d),
             spreadPercentile180d:
               metric.spreadPercentile180d === null ? null : Number(metric.spreadPercentile180d),
             historySampleSize180d: historySampleSizes.get(product.id) ?? 0,
@@ -266,9 +264,7 @@ export class MarketService {
             domesticMomentum7d:
               metric.domesticMomentum7d === null ? null : Number(metric.domesticMomentum7d),
             domesticMomentum7dDays:
-              metric.domesticMomentum7dDays === null
-                ? null
-                : Number(metric.domesticMomentum7dDays),
+              metric.domesticMomentum7dDays === null ? null : Number(metric.domesticMomentum7dDays),
             previousDayClose
           };
         })
@@ -277,6 +273,10 @@ export class MarketService {
   }
 
   async getWorldGoldHistory(days: number) {
+    const cacheKey = `market:history:world-gold:${days}:v1`;
+    const cached = await this.redis.getJson<Array<{ time: string; price: number }>>(cacheKey);
+    if (cached) return cached;
+
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const prices = await this.prisma.worldGoldPrice.findMany({
       where: {
@@ -288,12 +288,18 @@ export class MarketService {
       orderBy: { time: "asc" },
       select: { time: true, priceUsdPerOz: true }
     });
-    return latestTickByVietnamDay(prices, (price) => Number(price.priceUsdPerOz)).map(
+    const result = latestTickByVietnamDay(prices, (price) => Number(price.priceUsdPerOz)).map(
       ({ time, value }) => ({ time, price: value })
     );
+    await this.redis.setJson(cacheKey, result, HISTORY_CACHE_TTL_SECONDS);
+    return result;
   }
 
   async getUsdVndHistory(days: number) {
+    const cacheKey = `market:history:usd-vnd:${days}:v1`;
+    const cached = await this.redis.getJson<Array<{ time: string; rate: number }>>(cacheKey);
+    if (cached) return cached;
+
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const rates = await this.prisma.fxRate.findMany({
       where: {
@@ -306,22 +312,34 @@ export class MarketService {
       orderBy: { time: "asc" },
       select: { time: true, rate: true }
     });
-    return latestTickByVietnamDay(rates, (rate) => Number(rate.rate)).map(({ time, value }) => ({
-      time,
-      rate: value
-    }));
+    const result = latestTickByVietnamDay(rates, (rate) => Number(rate.rate)).map(
+      ({ time, value }) => ({
+        time,
+        rate: value
+      })
+    );
+    await this.redis.setJson(cacheKey, result, HISTORY_CACHE_TTL_SECONDS);
+    return result;
   }
 
   async getDxyHistory(days: number) {
+    const cacheKey = `market:history:dxy:${days}:v1`;
+    const cached = await this.redis.getJson<Array<{ time: string; value: number }>>(cacheKey);
+    if (cached) return cached;
+
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const values = await this.prisma.macroIndicator.findMany({
       where: { code: "DXY", isValid: true, value: { gt: 0 }, time: { gte: since } },
       orderBy: { time: "asc" },
       select: { time: true, value: true }
     });
-    return latestTickByVietnamDay(values, (point) => Number(point.value)).map(({ time, value }) => ({
-      time,
-      value
-    }));
+    const result = latestTickByVietnamDay(values, (point) => Number(point.value)).map(
+      ({ time, value }) => ({
+        time,
+        value
+      })
+    );
+    await this.redis.setJson(cacheKey, result, HISTORY_CACHE_TTL_SECONDS);
+    return result;
   }
 }

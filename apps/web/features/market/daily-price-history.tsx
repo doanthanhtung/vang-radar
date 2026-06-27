@@ -11,11 +11,16 @@ import {
   YAxis
 } from "recharts";
 import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
-import { getPremiumLevel, getSpreadLevel, getSpreadPremiumBadgeClassName } from "../../lib/utils";
+import {
+  getPremiumLevel,
+  getSpreadLevel,
+  getSpreadPremiumBadgeClassName,
+  getSpreadPremiumTextClassName
+} from "../../lib/utils";
 
-const CHART_GRID = "#334155";
+const CHART_GRID = "#2a3648";
 const CHART_TEXT = "#94a3b8";
-const CHART_GOLD = "#facc15";
+const CHART_GOLD = "#d9b159";
 
 function formatPrice(value: number): string {
   return `${(value / 1_000_000).toLocaleString("vi-VN", {
@@ -75,12 +80,17 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
       : `Diễn biến ${history.data.length}/7 ngày gần nhất`;
 
   return (
-    <section className="rounded-lg border border-border bg-background p-3 sm:p-4">
-      <div className="mb-4">
-        <h3 className="font-semibold text-foreground">{title}</h3>
-        <p className="mt-1 text-xs leading-5 text-muted">
-          Dùng giá bán ra cuối ngày. Hôm nay tạm tính theo giá mới nhất.
-        </p>
+    <section className="rounded-lg border border-white/[0.08] bg-slate-950/24 p-3 sm:p-4">
+      <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="font-semibold tracking-tight text-foreground">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Dùng giá bán ra cuối ngày. Hôm nay tạm tính theo giá mới nhất.
+          </p>
+        </div>
+        <span className="w-fit rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[11px] text-muted">
+          Lịch sử gần nhất
+        </span>
       </div>
 
       <div className="mb-4 grid gap-2 sm:grid-cols-3">
@@ -101,7 +111,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         />
       </div>
 
-      <div className="h-52 sm:h-56">
+      <div className="h-56 rounded-md border border-white/[0.06] bg-background/35 p-2 sm:h-60">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={history.data} margin={{ top: 10, right: 8, bottom: 4, left: 6 }}>
             <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" vertical={false} />
@@ -141,7 +151,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
 
       <div className="mt-4 hidden sm:block">
         <table className="w-full text-left text-sm">
-          <thead className="border-y border-border text-muted">
+          <thead className="border-y border-white/[0.08] text-muted">
             <tr>
               <th className="px-2 py-2 font-medium">Ngày</th>
               <th className="px-2 py-2 font-medium">Giá</th>
@@ -183,8 +193,10 @@ function SummaryCard({
   tone?: string;
 }) {
   return (
-    <div className="rounded-md border border-border bg-panel px-3 py-2">
-      <div className="text-xs text-muted">{label}</div>
+    <div className="metric-panel rounded-md px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+        {label}
+      </div>
       <div className={`mt-1 font-semibold ${tone}`}>{value}</div>
       {meta ? <div className={`mt-0.5 text-xs ${tone}`}>{meta}</div> : null}
     </div>
@@ -193,7 +205,7 @@ function SummaryCard({
 
 function HistoryRow({ point }: { point: DailyGoldPrice }) {
   return (
-    <tr className="border-b border-border/70">
+    <tr className="border-b border-white/[0.07]">
       <td className="px-2 py-2 font-medium text-foreground">
         {dateLabel(point.date)} {point.isToday ? <TodayBadges /> : null}
       </td>
@@ -202,10 +214,10 @@ function HistoryRow({ point }: { point: DailyGoldPrice }) {
         {formatPercent(point.changePercent, true)}
       </td>
       <td className="px-2 py-2">
-        <RateValue value={point.spreadPercent} type="spread" />
+        <RateValue value={point.spreadPercent} type="spread" showLevel={false} />
       </td>
       <td className="px-2 py-2">
-        <RateValue value={point.premiumPercent} type="premium" />
+        <RateValue value={point.premiumPercent} type="premium" showLevel={false} />
       </td>
     </tr>
   );
@@ -223,7 +235,7 @@ function HistoryCard({
       type="button"
       onClick={() => onSelect(point)}
       onMouseEnter={() => onSelect(point)}
-      className="w-full rounded-md border border-border bg-panel p-3 text-left"
+      className="w-full rounded-md border border-white/[0.08] bg-background/35 p-3 text-left transition-colors hover:bg-white/[0.04]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="font-medium text-foreground">
@@ -237,8 +249,14 @@ function HistoryCard({
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <Metric label="Spread" value={<RateValue value={point.spreadPercent} type="spread" />} />
-        <Metric label="Premium" value={<RateValue value={point.premiumPercent} type="premium" />} />
+        <Metric
+          label="Spread"
+          value={<RateValue value={point.spreadPercent} type="spread" showLevel={false} />}
+        />
+        <Metric
+          label="Premium"
+          value={<RateValue value={point.premiumPercent} type="premium" showLevel={false} />}
+        />
       </div>
     </button>
   );
@@ -259,23 +277,29 @@ function TodayBadges() {
 function RateValue({
   prefix,
   value,
-  type
+  type,
+  showLevel = true
 }: {
   prefix?: string;
   value: number | null;
   type: "spread" | "premium";
+  showLevel?: boolean;
 }) {
   const levelInfo = type === "spread" ? getSpreadLevel(value) : getPremiumLevel(value);
   if (!levelInfo) return <span>—</span>;
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+    <span
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap ${getSpreadPremiumTextClassName(levelInfo)}`}
+    >
       {prefix ? `${prefix} ` : ""}
       {formatPercent(value!)}
-      <span
-        className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${getSpreadPremiumBadgeClassName(levelInfo)}`}
-      >
-        {levelInfo.label}
-      </span>
+      {showLevel ? (
+        <span
+          className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${getSpreadPremiumBadgeClassName(levelInfo)}`}
+        >
+          {levelInfo.label}
+        </span>
+      ) : null}
     </span>
   );
 }

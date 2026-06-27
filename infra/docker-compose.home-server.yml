@@ -107,6 +107,7 @@ services:
     env_file:
       - ../.env
     environment:
+      NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/vangradar
       REDIS_URL: redis://redis:6379
     volumes:

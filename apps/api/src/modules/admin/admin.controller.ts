@@ -1,4 +1,16 @@
-import { Body, Controller, Get, Headers, Inject, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Inject,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards
+} from "@nestjs/common";
 import { ApiBasicAuth, ApiTags } from "@nestjs/swagger";
 import { AdminBasicAuthGuard } from "../../common/admin-basic-auth.guard.js";
 import { AdminService } from "./admin.service.js";
@@ -59,9 +71,45 @@ export class AdminController {
   }
 
   @Get("access/today")
-  async getTodayAccess(@Req() request: AdminRequest, @Query("audience") audience?: string) {
-    const result = await this.adminService.getTodayIpAccess(parseAudience(audience));
-    await this.adminService.audit(request, "access_today.viewed", { audience: result.audience });
+  async getTodayAccess(
+    @Req() request: AdminRequest,
+    @Query("audience") audience?: string,
+    @Query("country") country?: string
+  ) {
+    const result = await this.adminService.getTodayIpAccess(parseAudience(audience), country);
+    await this.adminService.audit(request, "access_today.viewed", {
+      audience: result.audience,
+      country: result.country ?? "all"
+    });
+    return result;
+  }
+
+  @Get("notifications/subscribers")
+  async getNotificationSubscribers(
+    @Req() request: AdminRequest,
+    @Query("status") status?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string
+  ) {
+    const result = await this.adminService.getNotificationSubscribers({
+      ...(status ? { status } : {}),
+      ...(numberQuery(skip) !== undefined ? { skip: numberQuery(skip) } : {}),
+      ...(numberQuery(take) !== undefined ? { take: numberQuery(take) } : {})
+    });
+    await this.adminService.audit(request, "notification_subscribers.viewed", {
+      status: status ?? "all",
+      take: result.take
+    });
+    return result;
+  }
+
+  @Delete("notifications/subscribers/:id")
+  async removeNotificationSubscriber(@Req() request: AdminRequest, @Param("id") id: string) {
+    const result = await this.adminService.removeNotificationSubscriber(id);
+    await this.adminService.audit(request, "notification_subscriber.removed", {
+      id,
+      email: result.email
+    });
     return result;
   }
 }

@@ -37,7 +37,9 @@ export class AccessLogService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  async record(record: AccessRecord): Promise<{ recorded: boolean; audience: "human" | "bot" | "skipped"; reason?: string }> {
+  async record(
+    record: AccessRecord
+  ): Promise<{ recorded: boolean; audience: "human" | "bot" | "skipped"; reason?: string }> {
     const ipAddress = record.ipAddress?.trim();
     if (!ipAddress || !isValidVisitorIp(ipAddress)) {
       return { recorded: false, audience: "skipped", reason: "invalid_ip" };
@@ -86,24 +88,35 @@ export class AccessLogService {
 
       return { recorded: true, audience: "human" };
     } catch (error) {
-      this.logger.error("Unable to persist site access event", error instanceof Error ? error.stack : undefined);
+      this.logger.error(
+        "Unable to persist site access event",
+        error instanceof Error ? error.stack : undefined
+      );
       return { recorded: false, audience: "skipped", reason: "persist_failed" };
     }
   }
 
-  async listTodayIpAccess(audience: VisitorAudience = "human"): Promise<{
+  async listTodayIpAccess(
+    audience: VisitorAudience = "human",
+    country?: string | undefined
+  ): Promise<{
     date: string;
     audience: VisitorAudience;
+    country: string | null;
     items: TodayIpAccess[];
     totalVisits: number;
   }> {
     const { start, end, dateLabel } = getVietnamTodayRange();
+    const normalizedCountry = normalizeCountry(country);
     const rows =
       audience === "bot"
-        ? await this.loadBotRows(start, end)
+        ? await this.loadBotRows(start, end, normalizedCountry)
         : audience === "all"
-          ? [...(await this.loadHumanRows(start, end)), ...(await this.loadBotRows(start, end))]
-          : await this.loadHumanRows(start, end);
+          ? [
+              ...(await this.loadHumanRows(start, end, normalizedCountry)),
+              ...(await this.loadBotRows(start, end, normalizedCountry))
+            ]
+          : await this.loadHumanRows(start, end, normalizedCountry);
 
     const grouped = new Map<string, TodayIpAccess>();
 
@@ -139,13 +152,15 @@ export class AccessLogService {
     }
 
     const items = [...grouped.values()].sort(
-      (left, right) => new Date(right.lastAccessAt).getTime() - new Date(left.lastAccessAt).getTime()
+      (left, right) =>
+        new Date(right.lastAccessAt).getTime() - new Date(left.lastAccessAt).getTime()
     );
     const totalVisits = items.reduce((sum, entry) => sum + entry.visitCount, 0);
 
     return {
       date: dateLabel,
       audience,
+      country: normalizedCountry,
       items,
       totalVisits
     };
@@ -180,7 +195,10 @@ export class AccessLogService {
     });
 
     void this.purgeExpiredBotLogs().catch((error) => {
-      this.logger.error("Unable to purge expired bot logs", error instanceof Error ? error.stack : undefined);
+      this.logger.error(
+        "Unable to purge expired bot logs",
+        error instanceof Error ? error.stack : undefined
+      );
     });
   }
 
@@ -190,11 +208,16 @@ export class AccessLogService {
     });
   }
 
-  private async loadHumanRows(start: Date, end: Date): Promise<Array<PersistedAccessRow & { audience: "human" }>> {
+  private async loadHumanRows(
+    start: Date,
+    end: Date,
+    country: string | null
+  ): Promise<Array<PersistedAccessRow & { audience: "human" }>> {
     const logs = await this.prisma.siteAccessLog.findMany({
       where: {
         accessedAt: { gte: start, lt: end },
-        isBot: false
+        isBot: false,
+        ...(country ? { country } : {})
       },
       select: {
         ipAddress: true,
@@ -209,9 +232,16 @@ export class AccessLogService {
     return logs.map((log) => ({ ...log, audience: "human" as const }));
   }
 
-  private async loadBotRows(start: Date, end: Date): Promise<Array<PersistedAccessRow & { audience: "bot" }>> {
+  private async loadBotRows(
+    start: Date,
+    end: Date,
+    country: string | null
+  ): Promise<Array<PersistedAccessRow & { audience: "bot" }>> {
     const logs = await this.prisma.botAccessLog.findMany({
-      where: { accessedAt: { gte: start, lt: end } },
+      where: {
+        accessedAt: { gte: start, lt: end },
+        ...(country ? { country } : {})
+      },
       select: {
         ipAddress: true,
         accessedAt: true,
@@ -230,4 +260,10 @@ function trimOrNull(value: string | null | undefined, maxLength: number): string
   const trimmed = value?.trim();
   if (!trimmed) return null;
   return trimmed.slice(0, maxLength);
+}
+
+function normalizeCountry(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toUpperCase();
+  if (!trimmed || trimmed === "ALL") return null;
+  return trimmed.slice(0, 64);
 }

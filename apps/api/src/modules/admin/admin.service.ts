@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditService } from "./audit.service.js";
 import { AccessLogService } from "../telemetry/access-log.service.js";
 import { PrismaService } from "../../common/prisma.service.js";
@@ -11,7 +11,11 @@ export class AdminService {
     @Inject(AccessLogService) private readonly accessLogService: AccessLogService
   ) {}
 
-  audit(request: Parameters<AuditService["record"]>[0], action: string, metadata?: Record<string, string | number | boolean | null>) {
+  audit(
+    request: Parameters<AuditService["record"]>[0],
+    action: string,
+    metadata?: Record<string, string | number | boolean | null>
+  ) {
     return this.auditService.record(request, {
       action,
       ...(metadata ? { metadata } : {})
@@ -22,8 +26,69 @@ export class AdminService {
     return this.auditService.list(params);
   }
 
-  getTodayIpAccess(audience: "human" | "bot" | "all" = "human") {
-    return this.accessLogService.listTodayIpAccess(audience);
+  getTodayIpAccess(audience: "human" | "bot" | "all" = "human", country?: string | undefined) {
+    return this.accessLogService.listTodayIpAccess(audience, country);
+  }
+
+  async getNotificationSubscribers(params: {
+    status?: string | undefined;
+    skip?: number | undefined;
+    take?: number | undefined;
+  }) {
+    const status = params.status?.trim() || undefined;
+    const skip = Math.max(0, Math.floor(params.skip ?? 0));
+    const take = Math.min(100, Math.max(1, Math.floor(params.take ?? 50)));
+    const where = status ? { status } : {};
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.notificationSubscriber.findMany({
+        where,
+        orderBy: { subscribedAt: "desc" },
+        skip,
+        take,
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          buyAlertEnabled: true,
+          subscribedAt: true,
+          unsubscribedAt: true,
+          lastNotifiedAt: true,
+          notificationCount: true
+        }
+      }),
+      this.prisma.notificationSubscriber.count({ where })
+    ]);
+
+    return { items, total, skip, take };
+  }
+
+  async removeNotificationSubscriber(id: string) {
+    const subscriber = await this.prisma.notificationSubscriber
+      .update({
+        where: { id },
+        data: {
+          status: "unsubscribed",
+          buyAlertEnabled: false,
+          unsubscribedAt: new Date()
+        },
+        select: {
+          id: true,
+          email: true,
+          status: true,
+          buyAlertEnabled: true,
+          unsubscribedAt: true
+        }
+      })
+      .catch(() => null);
+
+    if (!subscriber) {
+      throw new NotFoundException("Subscriber not found");
+    }
+
+    return {
+      ...subscriber,
+      unsubscribedAt: subscriber.unsubscribedAt?.toISOString() ?? null
+    };
   }
 
   async getSourceHealth() {
@@ -51,8 +116,10 @@ export class AdminService {
         "fetch-domestic-gold",
         "fetch-world-gold",
         "fetch-fx",
+        "fetch-macro-indicators",
         "calculate-metrics",
         "generate-signals",
+        "send-buy-alerts",
         "refresh-market-summary-cache"
       ],
       note: "Worker owns BullMQ job execution. This endpoint is the admin read model for MVP."
@@ -70,9 +137,21 @@ export class AdminService {
 
   async getLatestDataQuality() {
     const [domesticInvalid, worldInvalid, fxInvalid] = await Promise.all([
-      this.prisma.domesticGoldPrice.findMany({ where: { isValid: false }, orderBy: { time: "desc" }, take: 20 }),
-      this.prisma.worldGoldPrice.findMany({ where: { isValid: false }, orderBy: { time: "desc" }, take: 20 }),
-      this.prisma.fxRate.findMany({ where: { isValid: false }, orderBy: { time: "desc" }, take: 20 })
+      this.prisma.domesticGoldPrice.findMany({
+        where: { isValid: false },
+        orderBy: { time: "desc" },
+        take: 20
+      }),
+      this.prisma.worldGoldPrice.findMany({
+        where: { isValid: false },
+        orderBy: { time: "desc" },
+        take: 20
+      }),
+      this.prisma.fxRate.findMany({
+        where: { isValid: false },
+        orderBy: { time: "desc" },
+        take: 20
+      })
     ]);
 
     return { domesticInvalid, worldInvalid, fxInvalid };

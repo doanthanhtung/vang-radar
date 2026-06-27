@@ -3,6 +3,7 @@ import { Redis } from "ioredis";
 import type { PrismaClient } from "@prisma/client";
 import { loadConfig } from "@vang-radar/config";
 import { calculateLatestMetrics } from "../calculators/metrics.js";
+import { sendBuyAlerts } from "../jobs/buy-alerts.js";
 import { refreshMarketSummaryCache } from "../jobs/cache.js";
 import {
   fetchDomesticGold,
@@ -28,6 +29,7 @@ export function registerQueues(prisma: PrismaClient) {
     "fetch-macro-indicators",
     "calculate-metrics",
     "generate-signals",
+    "send-buy-alerts",
     "refresh-market-summary-cache"
   ];
   const queues = queueNames.map((name) => new Queue(name, { connection }));
@@ -39,6 +41,7 @@ export function registerQueues(prisma: PrismaClient) {
     "fetch-macro-indicators": () => fetchMacroIndicators(prisma),
     "calculate-metrics": () => calculateLatestMetrics(prisma),
     "generate-signals": () => generateLatestSignals(prisma),
+    "send-buy-alerts": () => sendBuyAlerts(prisma),
     "refresh-market-summary-cache": () => refreshMarketSummaryCache(prisma, cacheClient)
   };
 
@@ -84,6 +87,11 @@ export async function scheduleJobs(queues: Queue[]) {
     "scheduled",
     {},
     { repeat: { pattern: "*/5 * * * *" }, jobId: "generate-signals" }
+  );
+  await byName["send-buy-alerts"]?.add(
+    "scheduled",
+    {},
+    { repeat: { pattern: "*/15 * * * *" }, jobId: "send-buy-alerts" }
   );
   await byName["refresh-market-summary-cache"]?.add(
     "scheduled",

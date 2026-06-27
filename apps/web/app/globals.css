@@ -14,8 +14,9 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    radial-gradient(circle at 50% -20%, rgba(250, 204, 21, 0.08), transparent 34rem),
-    #0f172a;
+    radial-gradient(circle at 18% -10%, rgba(217, 177, 89, 0.13), transparent 34rem),
+    radial-gradient(circle at 88% 10%, rgba(20, 184, 166, 0.08), transparent 30rem),
+    linear-gradient(180deg, #101826 0%, #0b1220 48%, #0d1422 100%);
   color: #f8fafc;
   font-family:
     "Aptos Display",
@@ -27,6 +28,7 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+  font-variant-numeric: tabular-nums;
 }
 
 html {
@@ -55,13 +57,32 @@ a {
   text-decoration: none;
 }
 
+.research-shell {
+  position: relative;
+  overflow-x: hidden;
+}
+
+.research-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, black, transparent 74%);
+}
+
 .dashboard-visual {
   background-image:
     linear-gradient(
-      100deg,
-      rgba(2, 6, 23, 0.96),
-      rgba(15, 23, 42, 0.88) 52%,
-      rgba(15, 23, 42, 0.72)
+      115deg,
+      rgba(8, 13, 24, 0.97),
+      rgba(15, 23, 42, 0.9) 46%,
+      rgba(38, 31, 20, 0.7)
     ),
     url("/dashboard-gold.png");
   background-position: center;
@@ -100,4 +121,26 @@ a {
   font-size: 0.75rem;
   line-height: 1.35;
   box-shadow: 0 12px 30px rgba(2, 6, 23, 0.45);
+}
+
+.research-card {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.82)), rgba(15, 23, 42, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 22px 55px rgba(2, 6, 23, 0.28);
+}
+
+.metric-panel {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.54);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.table-sticky-header th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  backdrop-filter: blur(12px);
 }

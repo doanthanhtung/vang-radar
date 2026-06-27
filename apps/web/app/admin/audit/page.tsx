@@ -51,6 +51,7 @@ type TodayIpAccess = {
 type TodayAccessResponse = {
   date: string;
   audience: VisitorAudience;
+  country?: string | null;
   items: TodayIpAccess[];
   totalVisits: number;
 };
@@ -68,6 +69,7 @@ export default function AdminAuditPage() {
   const [action, setAction] = useState("");
   const [appliedAction, setAppliedAction] = useState("");
   const [audience, setAudience] = useState<VisitorAudience>("human");
+  const [country, setCountry] = useState("all");
   const [skip, setSkip] = useState(0);
   const username = credentials?.username ?? "";
   const password = credentials?.password ?? "";
@@ -82,12 +84,29 @@ export default function AdminAuditPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ skip: String(skip), take: String(PAGE_SIZE) });
       if (appliedAction) params.set("action", appliedAction);
-      return getAdminJson(`/admin/audit?${params.toString()}`, username, password) as Promise<AuditResponse>;
+      return getAdminJson(
+        `/admin/audit?${params.toString()}`,
+        username,
+        password
+      ) as Promise<AuditResponse>;
     },
     enabled: hasCredentials
   });
   const todayAccessQuery = useQuery({
-    queryKey: ["admin-access-today", username, audience],
+    queryKey: ["admin-access-today", username, audience, country],
+    queryFn: async () => {
+      const params = new URLSearchParams({ audience });
+      if (country !== "all") params.set("country", country);
+      return getAdminJson(
+        `/admin/access/today?${params.toString()}`,
+        username,
+        password
+      ) as Promise<TodayAccessResponse>;
+    },
+    enabled: hasCredentials
+  });
+  const countryOptionsQuery = useQuery({
+    queryKey: ["admin-access-country-options", username, audience],
     queryFn: async () => {
       const params = new URLSearchParams({ audience });
       return getAdminJson(
@@ -101,6 +120,7 @@ export default function AdminAuditPage() {
 
   const logs = query.data?.items ?? [];
   const todayAccess = todayAccessQuery.data?.items ?? [];
+  const countryOptions = buildCountryOptions(countryOptionsQuery.data?.items ?? todayAccess);
   const todayUniqueIps = todayAccess.length;
   const todayTotalVisits = todayAccessQuery.data?.totalVisits ?? 0;
   const total = query.data?.total ?? 0;
@@ -205,9 +225,22 @@ export default function AdminAuditPage() {
                 ))}
               </select>
             </label>
-            <Badge className="border-border bg-background text-muted">
-              {todayUniqueIps} IP
-            </Badge>
+            <label className="flex items-center gap-2 text-sm text-muted">
+              <span>Quốc gia</span>
+              <select
+                className="h-9 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none"
+                value={country}
+                onChange={(event) => setCountry(event.target.value)}
+              >
+                <option value="all">Tất cả</option>
+                {countryOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Badge className="border-border bg-background text-muted">{todayUniqueIps} IP</Badge>
             <Badge className="border-border bg-background text-muted">
               {todayTotalVisits} lượt
             </Badge>
@@ -230,7 +263,10 @@ export default function AdminAuditPage() {
               <tbody>
                 {todayAccess.length === 0 ? (
                   <tr>
-                    <Td colSpan={audience === "all" ? 7 : 6} className="py-10 text-center text-muted">
+                    <Td
+                      colSpan={audience === "all" ? 7 : 6}
+                      className="py-10 text-center text-muted"
+                    >
                       {todayAccessQuery.isLoading
                         ? "Đang tải IP truy cập"
                         : audience === "human"
@@ -242,7 +278,10 @@ export default function AdminAuditPage() {
                   </tr>
                 ) : (
                   todayAccess.map((entry) => (
-                    <tr key={`${entry.audience ?? audience}-${entry.ipAddress}`} className="align-top hover:bg-background/70">
+                    <tr
+                      key={`${entry.audience ?? audience}-${entry.ipAddress}`}
+                      className="align-top hover:bg-background/70"
+                    >
                       <Td className="font-mono text-xs">{entry.ipAddress}</Td>
                       {audience === "all" ? (
                         <Td>
@@ -315,7 +354,9 @@ export default function AdminAuditPage() {
                           {log.action}
                         </Badge>
                       </Td>
-                      <Td className="max-w-40 break-all text-xs text-muted">{log.requestId ?? "—"}</Td>
+                      <Td className="max-w-40 break-all text-xs text-muted">
+                        {log.requestId ?? "—"}
+                      </Td>
                       <Td className="max-w-40 break-all font-mono text-xs text-muted">
                         {log.ipAddress ?? "Không có"}
                       </Td>
@@ -362,6 +403,12 @@ export default function AdminAuditPage() {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Không thể tải audit log";
+}
+
+function buildCountryOptions(items: TodayIpAccess[]): string[] {
+  return [...new Set(items.map((item) => item.country?.trim()).filter(Boolean) as string[])].sort(
+    (left, right) => left.localeCompare(right)
+  );
 }
 
 function formatVietnamDateTime(value: string): string {

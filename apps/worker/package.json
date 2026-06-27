@@ -19,6 +19,7 @@
     "@vang-radar/logger": "workspace:*",
     "bullmq": "^5.34.1",
     "ioredis": "^5.4.2",
+    "nodemailer": "^9.0.1",
     "tsx": "^4.19.2"
   },
   "devDependencies": {

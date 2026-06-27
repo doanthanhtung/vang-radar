@@ -23,6 +23,19 @@ const envSchema = z.object({
   FETCH_INTERVAL_FX_CRON: z.string().default("*/5 * * * *"),
   ADMIN_USERNAME: z.string().min(1).default("admin"),
   ADMIN_PASSWORD: z.string().min(1).default("change_me"),
+  EMAIL_SENDER: z.string().email().optional(),
+  EMAIL_PASSWORD: z.string().optional(),
+  EMAIL_RECEIVERS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((email) => email.trim())
+        .filter(Boolean)
+    ),
+  SMTP_SERVER: z.string().default("smtp.gmail.com"),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
   PUBLIC_WEB_URL: z.string().url().optional(),
   PUBLIC_API_BASE_URL: z.string().url().default("http://localhost:4000/api/v1")
 });
