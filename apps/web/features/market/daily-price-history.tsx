@@ -163,10 +163,12 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
           </tbody>
         </table>
       </div>
-      <div className="mt-4 space-y-2 sm:hidden">
-        {[...history.data].reverse().map((point) => (
-          <HistoryCard key={point.date} point={point} onSelect={setSelectedMobile} />
-        ))}
+      <div className="mt-4 sm:hidden">
+        <MobileHistoryTimeline
+          points={[...history.data].reverse()}
+          selectedDate={selectedMobile?.date ?? null}
+          onSelect={setSelectedMobile}
+        />
       </div>
       {selectedMobile ? (
         <div className="mt-3 sm:hidden">
@@ -219,42 +221,63 @@ function HistoryRow({ point }: { point: DailyGoldPrice }) {
   );
 }
 
-function HistoryCard({
-  point,
+function MobileHistoryTimeline({
+  points,
+  selectedDate,
   onSelect
 }: {
-  point: DailyGoldPrice;
+  points: DailyGoldPrice[];
+  selectedDate: string | null;
   onSelect: (point: DailyGoldPrice) => void;
 }) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(point)}
-      onMouseEnter={() => onSelect(point)}
-      className="w-full rounded-md border border-white/[0.08] bg-background/35 p-3 text-left transition-colors hover:bg-white/[0.04]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="font-medium text-foreground">
-          {dateLabel(point.date)} {point.isToday ? <TodayBadges /> : null}
-        </div>
-        <div className="text-right">
-          <div className="font-semibold text-foreground">{formatPrice(point.close)}</div>
-          <div className={`mt-0.5 text-xs font-medium ${changeColor(point.changePercent)}`}>
-            {formatPercent(point.changePercent, true)}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-        <Metric
-          label="Spread"
-          value={<RateValue value={point.spreadPercent} type="spread" />}
-        />
-        <Metric
-          label="Premium"
-          value={<RateValue value={point.premiumPercent} type="premium" />}
-        />
-      </div>
-    </button>
+    <div className="overflow-hidden rounded-md border border-white/[0.08] bg-background/25">
+      {points.map((point, index) => {
+        const selected = point.date === selectedDate;
+        return (
+          <button
+            key={point.date}
+            type="button"
+            onClick={() => onSelect(point)}
+            onMouseEnter={() => onSelect(point)}
+            aria-pressed={selected}
+            className={`grid w-full grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/[0.06] px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-white/[0.04] active:scale-[0.995] ${
+              selected ? "bg-gold/[0.055]" : ""
+            }`}
+          >
+            <div className="relative flex min-h-10 items-center">
+              {index < points.length - 1 ? (
+                <span className="absolute left-[0.37rem] top-7 h-7 w-px bg-white/[0.08]" aria-hidden />
+              ) : null}
+              <span
+                className={`mr-2 h-2 w-2 rounded-full ${
+                  point.isToday ? "bg-gold" : "bg-slate-600"
+                }`}
+                aria-hidden
+              />
+              <span className="text-xs font-medium text-muted">
+                {point.isToday ? "Nay" : shortDateLabel(point.date)}
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="font-semibold text-foreground">{formatPrice(point.close)}</span>
+                <span className={`text-xs font-semibold ${changeColor(point.changePercent)}`}>
+                  {formatPercent(point.changePercent, true)}
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap gap-2">
+                <CompactRate label="P" value={point.premiumPercent} type="premium" />
+                <CompactRate label="S" value={point.spreadPercent} type="spread" />
+              </div>
+            </div>
+
+            <span className="h-1.5 w-1.5 rounded-full bg-white/20" aria-hidden />
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -292,13 +315,41 @@ function RateValue({
     </span>
   );
 }
-function Metric({ label, value }: { label: string; value: React.ReactNode }) {
+function CompactRate({
+  label,
+  value,
+  type
+}: {
+  label: "P" | "S";
+  value: number | null;
+  type: "spread" | "premium";
+}) {
+  const levelInfo = type === "spread" ? getSpreadLevel(value) : getPremiumLevel(value);
+  if (!levelInfo) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[11px] text-muted">
+        <span>{label}</span>
+        <span>—</span>
+      </span>
+    );
+  }
+
   return (
-    <div>
-      <div className="text-muted">{label}</div>
-      <div className="mt-0.5 font-medium text-foreground">{value}</div>
-    </div>
+    <span className="inline-flex items-center gap-1 text-[11px]">
+      <span className="font-medium text-muted">{label}</span>
+      <span className="font-medium text-foreground">{formatPercent(value)}</span>
+      <span className={`font-medium ${getSpreadPremiumTextClassName(levelInfo)}`}>
+        {shortLevelLabel(levelInfo.label)}
+      </span>
+    </span>
   );
+}
+
+function shortLevelLabel(label: string): string {
+  if (label === "Rất thấp") return "R.Thấp";
+  if (label === "Trung bình") return "TB";
+  if (label === "Rất cao") return "R.Cao";
+  return label;
 }
 
 function HistoryTooltip({
