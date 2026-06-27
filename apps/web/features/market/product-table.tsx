@@ -205,9 +205,6 @@ export function ProductTable({
               <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
                 {selectedProduct.name}
               </h3>
-              <p className="mt-1 text-sm text-muted">
-                Xem lịch sử 7 ngày để đối chiếu giá bán, premium và spread theo từng ngày.
-              </p>
             </div>
             <div className="flex items-center gap-3 sm:text-right">
               <div>

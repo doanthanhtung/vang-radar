@@ -83,9 +83,6 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
       <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="font-semibold tracking-tight text-foreground">{title}</h3>
-          <p className="mt-1 text-xs leading-5 text-muted">
-            Dùng giá bán ra cuối ngày. Hôm nay dùng giá mới nhất.
-          </p>
         </div>
         <span className="w-fit rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[11px] text-muted">
           Lịch sử gần nhất

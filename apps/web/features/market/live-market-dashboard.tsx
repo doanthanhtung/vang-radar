@@ -288,10 +288,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
           <CardHeader className="flex flex-col gap-1 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <CardTitle>Các yếu tố ảnh hưởng</CardTitle>
-              <p className="mt-1 text-sm text-muted">
-                Mở từng yếu tố để xem xu hướng 7 ngày và kiểm tra bối cảnh trước khi so sánh sản
-                phẩm.
-              </p>
             </div>
           </CardHeader>
           <CardContent className="p-4">
@@ -374,9 +370,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <h2 className="text-xl font-semibold tracking-tight text-foreground">
               Bảng so sánh sản phẩm
             </h2>
-            <p className="mt-1 text-sm text-muted">
-              Bấm vào từng dòng để xem lịch sử 7 ngày, premium và spread theo ngày.
-            </p>
           </div>
           <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-muted">
             <Gauge className="h-3.5 w-3.5 text-gold" aria-hidden />
@@ -471,9 +464,7 @@ function FactorHistoryTable({
             <tr className="border-b border-border/60 text-xs text-muted">
               <th className="w-[42%] px-3 py-2 text-left font-medium">Ngày</th>
               <th className="w-[33%] px-3 py-2 text-right font-medium">Giá trị</th>
-              <th className="w-[25%] px-3 py-2 text-right font-medium">
-                {format === "percent" ? "Biến đổi (pp)" : "Biến đổi"}
-              </th>
+              <th className="w-[25%] px-3 py-2 text-right font-medium">Biến đổi</th>
             </tr>
           </thead>
           <tbody>
