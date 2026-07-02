@@ -15,7 +15,6 @@ import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
 const CHART_GRID = "#2a3648";
 const CHART_TEXT = "#94a3b8";
 const CHART_GOLD = "#d9b159";
-const CHART_BUY = "#38bdf8";
 
 function formatCompactPrice(value: number): string {
   return `${(value / 1_000_000).toLocaleString("vi-VN", {
@@ -51,8 +50,8 @@ function shortDateLabel(date: string): string {
 }
 
 function chartDomain(data: DailyGoldPrice[]): [number, number] {
-  const minimum = Math.min(...data.flatMap((point) => [point.low, point.buyClose, point.close]));
-  const maximum = Math.max(...data.flatMap((point) => [point.high, point.buyClose, point.close]));
+  const minimum = Math.min(...data.map((point) => point.close));
+  const maximum = Math.max(...data.map((point) => point.close));
   const margin = Math.max(maximum * 0.01, 100_000);
   return [Math.max(0, minimum - margin), maximum + margin];
 }
@@ -124,15 +123,6 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
             <Tooltip
               content={<HistoryTooltip />}
               cursor={{ stroke: CHART_TEXT, strokeDasharray: "4 4" }}
-            />
-            <Line
-              type="monotone"
-              dataKey="buyClose"
-              name="Mua vào"
-              stroke={CHART_BUY}
-              strokeWidth={2}
-              dot={{ r: 2.5, fill: CHART_BUY, strokeWidth: 0 }}
-              activeDot={{ r: 4.5, fill: CHART_BUY, strokeWidth: 0 }}
             />
             <Line
               type="monotone"
@@ -319,17 +309,6 @@ function HistoryTooltip({
         {dateLabel(point.date)}
       </div>
       <div className="space-y-1 text-foreground">
-        <TooltipLine
-          label="Mua vào"
-          value={
-            <PriceWithChange
-              price={point.buyClose}
-              change={point.buyChangeVnd}
-              align="right"
-              compact
-            />
-          }
-        />
         <TooltipLine
           label="Bán ra"
           value={

@@ -117,7 +117,7 @@ export function ProductTable({
             <article
               key={product.code}
               className={`research-card overflow-hidden rounded-lg ${
-                isSelected ? "ring-1 ring-gold/35" : ""
+                isSelected ? "bg-gold/[0.035] ring-1 ring-gold/35" : ""
               }`}
             >
               <button
@@ -128,8 +128,16 @@ export function ProductTable({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-foreground">{product.name}</div>
-                    <div className="text-xs text-muted">{product.brand}</div>
+                    <div
+                      className={`text-base font-semibold tracking-tight ${
+                        isSelected ? "text-gold" : "text-amber-100"
+                      }`}
+                    >
+                      {product.name}
+                    </div>
+                    <div className="mt-1 inline-flex rounded border border-gold/20 bg-gold/[0.08] px-1.5 py-0.5 text-[11px] font-medium text-gold/85">
+                      {product.brand}
+                    </div>
                   </div>
                   <SelectionMark selected={isSelected} />
                 </div>

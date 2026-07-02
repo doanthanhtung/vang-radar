@@ -57,6 +57,7 @@ export interface MarketSummary {
 
 export interface MetricPoint {
   time: string;
+  domesticBuyPriceVnd?: string | number;
   domesticSellPriceVnd: string | number;
   premiumSellPct: string | number;
   spreadPct: string | number;
@@ -67,9 +68,12 @@ export interface DailyGoldPrice {
   open: number;
   high: number;
   low: number;
+  buyClose: number;
   close: number;
   isToday: boolean;
   isTemporaryClose: boolean;
+  buyChangeVnd: number | null;
+  sellChangeVnd: number | null;
   changePercent: number | null;
   intradayRangePercent: number | null;
   spreadPercent: number | null;
@@ -168,7 +172,8 @@ export async function getMetricHistory(
   range = "180d"
 ): Promise<MetricPoint[]> {
   return fetchApi<MetricPoint[]>(
-    `/metrics/history?productCode=${encodeURIComponent(productCode)}&range=${range}`
+    `/metrics/history?productCode=${encodeURIComponent(productCode)}&range=${range}`,
+    { cache: "no-store" }
   );
 }
 
