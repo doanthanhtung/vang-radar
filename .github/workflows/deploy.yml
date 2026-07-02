@@ -1,0 +1,87 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, Windows, vang-radar-prod]
+    defaults:
+      run:
+        shell: powershell
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Write production environment
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PRODUCTION_ENV)) {
+            throw "Missing GitHub secret PRODUCTION_ENV. Store the full production .env content in this secret."
+          }
+
+          $encoding = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllText((Join-Path $PWD ".env"), $env:PRODUCTION_ENV, $encoding)
+
+      - name: Check Docker
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build, migrate, seed, and start services
+        run: |
+          $composeFile = "infra/docker-compose.home-server.yml"
+
+          docker compose --profile tunnel -f $composeFile up -d postgres redis
+          if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
+
+          docker compose -f $composeFile run --rm app-setup
+          if ($LASTEXITCODE -ne 0) {
+            docker compose -f $composeFile logs --tail 120 app-setup
+            throw "App setup failed."
+          }
+
+          docker compose --profile tunnel -f $composeFile up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
+          if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
+
+      - name: Health check
+        run: |
+          function Wait-HttpOk {
+            param(
+              [Parameter(Mandatory = $true)][string]$Url,
+              [int]$Attempts = 60
+            )
+
+            for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+              $statusCode = & curl.exe --silent --output NUL --write-out "%{http_code}" --max-time 5 $Url
+              if ($LASTEXITCODE -eq 0 -and $statusCode -match "^2\d\d$") {
+                Write-Host "$Url is ready (HTTP $statusCode)."
+                return
+              }
+
+              Start-Sleep -Seconds 2
+            }
+
+            throw "$Url did not become ready."
+          }
+
+          Wait-HttpOk -Url "http://127.0.0.1:3000"
+          Wait-HttpOk -Url "http://127.0.0.1:4000/api/v1/health"
+
+      - name: Show service status
+        if: always()
+        run: docker compose --profile tunnel -f infra/docker-compose.home-server.yml ps

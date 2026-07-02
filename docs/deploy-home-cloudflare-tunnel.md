@@ -57,7 +57,7 @@ public HTTPS API URL.
 From the repo root:
 
 ```powershell
-docker compose -f infra/docker-compose.home-server.yml up -d
+docker compose --profile tunnel -f infra/docker-compose.home-server.yml up -d
 ```
 
 Check containers:
@@ -89,9 +89,72 @@ Open:
 Re-run the setup service so it installs/builds/migrates again, then restart the app services:
 
 ```powershell
-docker compose -f infra/docker-compose.home-server.yml up --force-recreate app-setup
-docker compose -f infra/docker-compose.home-server.yml up -d
+docker compose -f infra/docker-compose.home-server.yml run --rm app-setup
+docker compose --profile tunnel -f infra/docker-compose.home-server.yml up -d --no-deps --force-recreate api worker web cloudflared
 ```
+
+## Auto deploy with GitHub Actions
+
+The repository includes `.github/workflows/deploy.yml`. It runs after the `CI` workflow
+passes on `main`, or manually from the GitHub Actions page.
+
+Use a self-hosted GitHub Actions runner on the production machine. Give the runner a
+custom label:
+
+```text
+vang-radar-prod
+```
+
+The runner must be Windows-based, have Docker Desktop running, and be allowed to run
+`docker compose`.
+
+On the production machine, install/authenticate GitHub CLI:
+
+```powershell
+winget install --id GitHub.cli --exact
+gh auth login --hostname github.com --git-protocol https --web --scopes repo,workflow,admin:repo_hook
+```
+
+Then run the setup script from the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/setup-github-actions-runner.ps1 -SetProductionEnvSecret
+```
+
+This writes the `PRODUCTION_ENV` secret from the local `.env`, downloads the latest
+Windows x64 GitHub Actions runner, registers it for this repository, and starts it in
+the current user session.
+
+To install the runner as a Windows service instead, run PowerShell as Administrator:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File infra/scripts/setup-github-actions-runner.ps1 -SetProductionEnvSecret -AsService
+```
+
+Create a repository secret named `PRODUCTION_ENV` that contains the full production
+`.env` content, for example:
+
+```env
+NODE_ENV=production
+PUBLIC_WEB_URL=https://vang.your-domain.com
+PUBLIC_API_BASE_URL=https://api-vang.your-domain.com/api/v1
+NEXT_PUBLIC_API_BASE_URL=https://api-vang.your-domain.com/api/v1
+TUNNEL_TOKEN=eyJ...
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace_with_a_strong_password
+```
+
+Include the provider keys and email settings in the same secret if production needs
+them. Do not commit `.env`.
+
+Deploy flow:
+
+1. Push to `main`.
+2. `CI` runs `lint`, `typecheck`, `test`, and `build`.
+3. If CI passes, `Deploy` runs on the self-hosted runner.
+4. The deploy job writes `.env` from `PRODUCTION_ENV`, runs migrations/seed/build through
+   `app-setup`, recreates `api`, `worker`, `web`, and `cloudflared`, then checks local
+   Web/API health.
 
 ## Stop
 

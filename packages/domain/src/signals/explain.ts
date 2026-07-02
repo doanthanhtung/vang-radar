@@ -189,8 +189,7 @@ function evaluateDataQuality(input: SignalInput): SignalRuleTrace | null {
 function evaluateAvoidRule(
   input: SignalInput,
   premiumPercentile: number,
-  premiumHistory: PercentileHistory,
-  confidence: number
+  premiumHistory: PercentileHistory
 ): SignalRuleTrace {
   const premiumTooHigh = input.premiumSellPct > VN_THRESHOLDS.premiumAvoidAbsolute;
   const spreadTooHigh = input.spreadPct > VN_THRESHOLDS.spreadAvoidAbsolute;
@@ -246,8 +245,7 @@ function evaluateBuyDcaRule(
   spreadPercentile: number,
   premiumHistory: PercentileHistory,
   spreadHistory: PercentileHistory,
-  xauMomentum: ResolvedMomentum,
-  confidence: number
+  xauMomentum: ResolvedMomentum
 ): SignalRuleTrace {
   const hasXauMomentum = xauMomentum.value !== null;
   const spreadAcceptable = isSpreadAcceptableForBuy(input);
@@ -326,8 +324,7 @@ function evaluateTakeProfitRule(
   spreadPercentile: number,
   premiumHistory: PercentileHistory,
   spreadHistory: PercentileHistory,
-  domesticMomentum7d: ResolvedMomentum,
-  confidence: number
+  domesticMomentum7d: ResolvedMomentum
 ): SignalRuleTrace {
   const hasDomesticMomentum = domesticMomentum7d.value !== null;
   const spreadHot = isSpreadHotForTakeProfit(input, spreadPercentile, spreadHistory);
@@ -532,12 +529,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
   };
   const confidence = buildConfidence(input);
 
-  const avoidRule = evaluateAvoidRule(
-    input,
-    premiumPercentile,
-    premiumHistory,
-    confidence
-  );
+  const avoidRule = evaluateAvoidRule(input, premiumPercentile, premiumHistory);
   if (avoidRule.matched) {
     return {
       output: {
@@ -560,8 +552,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
     spreadPercentile,
     premiumHistory,
     spreadHistory,
-    xauMomentum,
-    confidence
+    xauMomentum
   );
   if (buyDcaRule.matched) {
     const momentumDays = xauMomentum.days ?? 30;
@@ -587,8 +578,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
     spreadPercentile,
     premiumHistory,
     spreadHistory,
-    domesticMomentum7d,
-    confidence
+    domesticMomentum7d
   );
   if (takeProfitRule.matched) {
     return {

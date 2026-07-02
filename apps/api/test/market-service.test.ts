@@ -21,9 +21,17 @@ describe("MarketService", () => {
           source: { code: "GOLDAPI_IO" }
         })
       },
+      macroIndicator: {
+        findFirst: async () => null
+      },
+      goldMetric: {
+        count: async () => 0,
+        findFirst: async () => null
+      },
       goldProduct: {
         findMany: async () => [
           {
+            id: "product-sjc-bar",
             code: "SJC_BAR",
             name: "Vang mieng SJC",
             brand: "SJC",
