@@ -1,13 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity,
-  Clock3,
-  Database,
-  Gauge,
-  ShieldAlert
-} from "lucide-react";
+import { Activity, Clock3, Database, Gauge, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
 import type { GoldPriceHistory, MarketSummary } from "../../lib/api-client";
@@ -90,6 +84,10 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   );
   const averageSpread = useMemo(
     () => average(liveProducts.map((item) => item.spreadPct)),
+    [liveProducts]
+  );
+  const averageSpreadAbs = useMemo(
+    () => average(liveProducts.map((item) => item.spreadAbsVnd)),
     [liveProducts]
   );
   const vangScore = useMemo(
@@ -278,6 +276,12 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
               <SummaryMetric label="Giá bán TB" value={formatVndSafe(averageSell)} />
               <SummaryMetric label="Chênh lệch" value={formatVndSafe(priceGap)} tone="warn" />
               <SummaryMetric label="Premium TB" value={formatPercent(averagePremium)} tone="warn" />
+              <SummaryMetric
+                label="Spread TB"
+                value={formatVndSafe(averageSpreadAbs)}
+                meta={formatPercent(averageSpread)}
+                className="col-span-2 sm:col-span-1"
+              />
             </div>
           </aside>
         </div>
@@ -291,7 +295,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             </div>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-5 lg:gap-3">
               <IndicatorFactor
                 label="XAU/USD"
                 value={
@@ -335,7 +339,8 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
               />
               <IndicatorFactor
                 label="Spread TB"
-                value={formatPercent(averageSpread)}
+                value={formatVndSafe(averageSpreadAbs)}
+                meta={formatPercent(averageSpread)}
                 delta={getLatestFactorChange(factorIndicatorHistory.spread)}
                 format="percent"
                 expanded={expandedFactor === "spread"}
@@ -404,14 +409,18 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
 function SummaryMetric({
   label,
   value,
+  meta,
+  className,
   tone = "default"
 }: {
   label: string;
   value: string;
+  meta?: string;
+  className?: string;
   tone?: "default" | "warn";
 }) {
   return (
-    <div className="metric-panel rounded-md px-3 py-2.5">
+    <div className={cn("metric-panel rounded-md px-3 py-2.5", className)}>
       <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-slate-500">
         {label}
       </div>
@@ -424,6 +433,7 @@ function SummaryMetric({
       >
         {value}
       </div>
+      {meta ? <div className="mt-0.5 text-[11px] font-medium text-muted">{meta}</div> : null}
     </div>
   );
 }
@@ -491,6 +501,7 @@ function FactorHistoryTable({
 function IndicatorFactor({
   label,
   value,
+  meta,
   delta,
   format,
   expanded,
@@ -498,6 +509,7 @@ function IndicatorFactor({
 }: {
   label: string;
   value: string;
+  meta?: string;
   delta: number | null | undefined;
   format: FactorHistoryFormat;
   expanded: boolean;
@@ -509,15 +521,19 @@ function IndicatorFactor({
       onClick={onToggle}
       aria-expanded={expanded}
       className={cn(
-        "metric-panel min-h-[7.25rem] rounded-lg p-3 text-left transition duration-200 hover:border-gold/30 hover:bg-white/[0.05] active:scale-[0.98]",
+        "metric-panel min-h-[5.25rem] rounded-md p-2.5 text-left transition duration-200 hover:border-gold/30 hover:bg-white/[0.05] active:scale-[0.98] sm:min-h-[6.25rem] sm:rounded-lg sm:p-3 lg:min-h-[7.25rem]",
         expanded && "border-gold/45 bg-gold/[0.06]"
       )}
     >
       <div className="text-xs font-medium text-muted">{label}</div>
-      <div className="mt-2 truncate text-2xl font-semibold tracking-tight text-foreground" title={value}>
+      <div
+        className="mt-1.5 truncate text-lg font-semibold tracking-tight text-foreground sm:mt-2 sm:text-xl lg:text-2xl"
+        title={value}
+      >
         {value}
       </div>
-      <div className="mt-3">
+      {meta ? <div className="mt-0.5 text-[11px] font-medium text-muted">{meta}</div> : null}
+      <div className="mt-1.5 sm:mt-2 lg:mt-3">
         <FactorDeltaBadge delta={delta} format={format} />
       </div>
     </button>

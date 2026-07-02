@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
 import { getGoldPriceHistory } from "../../lib/api-client";
@@ -143,7 +144,12 @@ export function ProductTable({
                     }
                   />
                   <ProductMetric label="Premium" value={formatPercent(product.premiumSellPct)} />
-                  <ProductMetric label="Spread" value={formatPercent(product.spreadPct)} />
+                  <ProductMetric
+                    label="Spread"
+                    value={
+                      <SpreadValue amount={product.spreadAbsVnd} percent={product.spreadPct} />
+                    }
+                  />
                   <ProductMetric label="Điểm" value={<ScoreValue product={product} />} />
                 </dl>
               </button>
@@ -206,7 +212,7 @@ export function ProductTable({
                 {selectedProduct.name}
               </h3>
             </div>
-            <div className="flex items-center gap-3 sm:text-right">
+            <div className="flex flex-wrap items-center gap-3 sm:justify-end sm:text-right">
               <div>
                 <div className="text-xs text-muted">Điểm hiện tại</div>
                 <div className="mt-1 font-semibold text-foreground">
@@ -214,6 +220,12 @@ export function ProductTable({
                 </div>
               </div>
               <SignalBadge signal={selectedProduct.signal} />
+              <Link
+                href={`/gold/${selectedProduct.code}`}
+                className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gold/40 bg-gold/[0.18] px-4 text-sm font-semibold text-gold shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_10px_24px_rgba(245,158,11,0.14)] transition hover:bg-gold/[0.22] active:scale-[0.98] sm:min-h-9 sm:w-auto sm:px-3 sm:font-medium sm:shadow-none"
+              >
+                Phân tích 180N
+              </Link>
             </div>
           </div>
           <div className="p-3 sm:p-4">
@@ -275,7 +287,7 @@ function ProductRow({
         <MetricValue value={product.premiumSellPct} />
       </Td>
       <Td className="text-right">
-        <MetricValue value={product.spreadPct} />
+        <SpreadValue amount={product.spreadAbsVnd} percent={product.spreadPct} align="right" />
       </Td>
       <Td className="text-right">
         <ScoreValue product={product} />
@@ -373,6 +385,23 @@ function PriceWithChange({
 
 function MetricValue({ value }: { value: number }) {
   return <div className="font-medium text-foreground">{formatPercent(value)}</div>;
+}
+
+function SpreadValue({
+  amount,
+  percent,
+  align = "left"
+}: {
+  amount: number;
+  percent: number;
+  align?: "left" | "right";
+}) {
+  return (
+    <div className={align === "right" ? "text-right" : ""}>
+      <div className="font-semibold text-foreground">{formatVnd(amount)}</div>
+      <div className="mt-0.5 text-[11px] font-medium text-muted">{formatPercent(percent)}</div>
+    </div>
+  );
 }
 
 function ScoreValue({ product }: { product: MarketSummaryProduct }) {

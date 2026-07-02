@@ -11,30 +11,28 @@ import {
   YAxis
 } from "recharts";
 import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
-import {
-  getPremiumLevel,
-  getSpreadLevel,
-  getSpreadPremiumTextClassName
-} from "../../lib/utils";
 
 const CHART_GRID = "#2a3648";
 const CHART_TEXT = "#94a3b8";
 const CHART_GOLD = "#d9b159";
+const CHART_BUY = "#38bdf8";
 
-function formatPrice(value: number): string {
+function formatCompactPrice(value: number): string {
   return `${(value / 1_000_000).toLocaleString("vi-VN", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1
   })}tr`;
 }
 
-function formatPercent(value: number | null, signed = false): string {
+function formatFullPrice(value: number): string {
+  return `${value.toLocaleString("vi-VN")} ₫`;
+}
+
+function formatSignedVnd(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "—";
-  const sign = signed && value > 0 ? "+" : "";
-  return `${sign}${(value * 100).toLocaleString("vi-VN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })}%`;
+  if (value === 0) return "0 ₫";
+  const sign = value > 0 ? "+" : "-";
+  return `${sign}${Math.abs(value).toLocaleString("vi-VN")} ₫`;
 }
 
 function changeColor(value: number | null): string {
@@ -53,8 +51,8 @@ function shortDateLabel(date: string): string {
 }
 
 function chartDomain(data: DailyGoldPrice[]): [number, number] {
-  const minimum = Math.min(...data.map((point) => point.low));
-  const maximum = Math.max(...data.map((point) => point.high));
+  const minimum = Math.min(...data.flatMap((point) => [point.low, point.buyClose, point.close]));
+  const maximum = Math.max(...data.flatMap((point) => [point.high, point.buyClose, point.close]));
   const margin = Math.max(maximum * 0.01, 100_000);
   return [Math.max(0, minimum - margin), maximum + margin];
 }
@@ -70,8 +68,6 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
   }
 
   const latest = history.data[history.data.length - 1]!;
-  const first = history.data[0]!;
-  const periodChange = first.close === 0 ? null : (latest.close - first.close) / first.close;
   const domain = chartDomain(history.data);
   const title =
     history.data.length >= 7
@@ -89,21 +85,18 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         </span>
       </div>
 
-      <div className="mb-4 grid gap-2 sm:grid-cols-3">
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4">
         <SummaryCard
-          label="Giá hôm nay"
-          value={formatPrice(latest.close)}
-          meta={formatPercent(latest.changePercent, true)}
-          tone={changeColor(latest.changePercent)}
+          label="Mua vào"
+          value={formatFullPrice(latest.buyClose)}
+          meta={formatSignedVnd(latest.buyChangeVnd)}
+          tone={changeColor(latest.buyChangeVnd)}
         />
         <SummaryCard
-          label={`Xu hướng ${history.data.length} ngày`}
-          value={formatPercent(periodChange, true)}
-          tone={changeColor(periodChange)}
-        />
-        <SummaryCard
-          label="Chi phí mua"
-          value={<RateValue prefix="Premium" value={latest.premiumPercent} type="premium" />}
+          label="Bán ra"
+          value={formatFullPrice(latest.close)}
+          meta={formatSignedVnd(latest.sellChangeVnd)}
+          tone={changeColor(latest.sellChangeVnd)}
         />
       </div>
 
@@ -122,7 +115,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
             <YAxis
               dataKey="close"
               domain={domain}
-              tickFormatter={formatPrice}
+              tickFormatter={formatCompactPrice}
               tick={{ fill: CHART_TEXT, fontSize: 11 }}
               tickLine={false}
               axisLine={false}
@@ -134,8 +127,17 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
             />
             <Line
               type="monotone"
+              dataKey="buyClose"
+              name="Mua vào"
+              stroke={CHART_BUY}
+              strokeWidth={2}
+              dot={{ r: 2.5, fill: CHART_BUY, strokeWidth: 0 }}
+              activeDot={{ r: 4.5, fill: CHART_BUY, strokeWidth: 0 }}
+            />
+            <Line
+              type="monotone"
               dataKey="close"
-              name="Giá"
+              name="Bán ra"
               stroke={CHART_GOLD}
               strokeWidth={2.5}
               dot={{ r: 3, fill: CHART_GOLD, strokeWidth: 0 }}
@@ -146,14 +148,12 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
       </div>
 
       <div className="mt-4 hidden sm:block">
-        <table className="w-full text-left text-sm">
+        <table className="w-full table-fixed text-left text-sm">
           <thead className="border-y border-white/[0.08] text-muted">
             <tr>
-              <th className="px-2 py-2 font-medium">Ngày</th>
-              <th className="px-2 py-2 font-medium">Giá</th>
-              <th className="px-2 py-2 font-medium">Thay đổi</th>
-              <th className="px-2 py-2 font-medium">Spread</th>
-              <th className="px-2 py-2 font-medium">Premium</th>
+              <th className="w-[28%] px-2 py-2 font-medium">Ngày</th>
+              <th className="px-2 py-2 text-right font-medium">Mua vào</th>
+              <th className="px-2 py-2 text-right font-medium">Bán ra</th>
             </tr>
           </thead>
           <tbody>
@@ -191,12 +191,16 @@ function SummaryCard({
   tone?: string;
 }) {
   return (
-    <div className="metric-panel rounded-md px-3 py-2">
-      <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+    <div className="metric-panel rounded-md px-2.5 py-2 sm:px-3 sm:py-2.5">
+      <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500 sm:text-[11px]">
         {label}
       </div>
-      <div className={`mt-1 font-semibold ${tone}`}>{value}</div>
-      {meta ? <div className={`mt-0.5 text-xs ${tone}`}>{meta}</div> : null}
+      <div className="mt-1 text-[13px] font-semibold leading-tight text-foreground sm:text-base">
+        {value}
+      </div>
+      {meta ? (
+        <div className={`mt-0.5 text-[11px] font-semibold sm:text-xs ${tone}`}>{meta}</div>
+      ) : null}
     </div>
   );
 }
@@ -207,15 +211,11 @@ function HistoryRow({ point }: { point: DailyGoldPrice }) {
       <td className="px-2 py-2 font-medium text-foreground">
         {dateLabel(point.date)} {point.isToday ? <TodayBadges /> : null}
       </td>
-      <td className="px-2 py-2 font-medium text-foreground">{formatPrice(point.close)}</td>
-      <td className={`px-2 py-2 font-medium ${changeColor(point.changePercent)}`}>
-        {formatPercent(point.changePercent, true)}
+      <td className="px-2 py-2 text-right">
+        <PriceWithChange price={point.buyClose} change={point.buyChangeVnd} align="right" />
       </td>
-      <td className="px-2 py-2">
-        <RateValue value={point.spreadPercent} type="spread" />
-      </td>
-      <td className="px-2 py-2">
-        <RateValue value={point.premiumPercent} type="premium" />
+      <td className="px-2 py-2 text-right">
+        <PriceWithChange price={point.close} change={point.sellChangeVnd} align="right" />
       </td>
     </tr>
   );
@@ -231,8 +231,8 @@ function MobileHistoryTimeline({
   onSelect: (point: DailyGoldPrice) => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-md border border-white/[0.08] bg-background/25">
-      {points.map((point, index) => {
+    <div className="space-y-1.5">
+      {points.map((point) => {
         const selected = point.date === selectedDate;
         return (
           <button
@@ -241,39 +241,23 @@ function MobileHistoryTimeline({
             onClick={() => onSelect(point)}
             onMouseEnter={() => onSelect(point)}
             aria-pressed={selected}
-            className={`grid w-full grid-cols-[3.25rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-white/[0.06] px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-white/[0.04] active:scale-[0.995] ${
-              selected ? "bg-gold/[0.055]" : ""
+            className={`w-full rounded-md border px-2.5 py-2 text-left transition-colors active:scale-[0.995] ${
+              selected
+                ? "border-gold/35 bg-gold/[0.055]"
+                : "border-white/[0.07] bg-background/25 hover:bg-white/[0.04]"
             }`}
           >
-            <div className="relative flex min-h-10 items-center">
-              {index < points.length - 1 ? (
-                <span className="absolute left-[0.37rem] top-7 h-7 w-px bg-white/[0.08]" aria-hidden />
-              ) : null}
-              <span
-                className={`mr-2 h-2 w-2 rounded-full ${
-                  point.isToday ? "bg-gold" : "bg-slate-600"
-                }`}
-                aria-hidden
-              />
-              <span className="text-xs font-medium text-muted">
-                {point.isToday ? "Nay" : shortDateLabel(point.date)}
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-muted">
+                {point.isToday ? "Hôm nay" : dateLabel(point.date)}
               </span>
+              <span className="text-[11px] text-slate-500">{shortDateLabel(point.date)}</span>
             </div>
 
-            <div className="min-w-0">
-              <div className="flex items-baseline gap-2">
-                <span className="font-semibold text-foreground">{formatPrice(point.close)}</span>
-                <span className={`text-xs font-semibold ${changeColor(point.changePercent)}`}>
-                  {formatPercent(point.changePercent, true)}
-                </span>
-              </div>
-              <div className="mt-1 flex flex-wrap gap-2">
-                <CompactRate label="P" value={point.premiumPercent} type="premium" />
-                <CompactRate label="S" value={point.spreadPercent} type="spread" />
-              </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <MobilePriceBox label="Mua vào" price={point.buyClose} change={point.buyChangeVnd} />
+              <MobilePriceBox label="Bán ra" price={point.close} change={point.sellChangeVnd} />
             </div>
-
-            <span className="h-1.5 w-1.5 rounded-full bg-white/20" aria-hidden />
           </button>
         );
       })}
@@ -290,68 +274,34 @@ function TodayBadges() {
     </span>
   );
 }
-function RateValue({
-  prefix,
-  value,
-  type,
-  showLevel = true
-}: {
-  prefix?: string;
-  value: number | null;
-  type: "spread" | "premium";
-  showLevel?: boolean;
-}) {
-  const levelInfo = type === "spread" ? getSpreadLevel(value) : getPremiumLevel(value);
-  if (!levelInfo) return <span>—</span>;
-  return (
-    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
-      {prefix ? <span className="text-muted">{prefix}</span> : null}
-      <span className="font-medium text-foreground">{formatPercent(value!)}</span>
-      {showLevel ? (
-        <span className={`text-[11px] font-medium ${getSpreadPremiumTextClassName(levelInfo)}`}>
-          {levelInfo.label}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-function CompactRate({
+
+function MobilePriceBox({
   label,
-  value,
-  type
+  price,
+  change
 }: {
-  label: "P" | "S";
-  value: number | null;
-  type: "spread" | "premium";
+  label: string;
+  price: number;
+  change: number | null;
 }) {
-  const levelInfo = type === "spread" ? getSpreadLevel(value) : getPremiumLevel(value);
-  if (!levelInfo) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[11px] text-muted">
-        <span>{label}</span>
-        <span>—</span>
-      </span>
-    );
-  }
-
   return (
-    <span className="inline-flex items-center gap-1 text-[11px]">
-      <span className="font-medium text-muted">{label}</span>
-      <span className="font-medium text-foreground">{formatPercent(value)}</span>
-      <span className={`font-medium ${getSpreadPremiumTextClassName(levelInfo)}`}>
-        {shortLevelLabel(levelInfo.label)}
-      </span>
-    </span>
+    <div className="rounded bg-white/[0.035] px-2 py-1.5">
+      <div className="flex items-baseline justify-between gap-1.5">
+        <span className="text-[10px] font-medium text-muted">{label}</span>
+        <span className="whitespace-nowrap text-[13px] font-semibold leading-none text-foreground">
+          {formatCompactPrice(price)}
+        </span>
+      </div>
+      <div
+        className={`mt-1 whitespace-nowrap text-right text-[11px] font-semibold leading-none ${changeColor(
+          change
+        )}`}
+      >
+        {formatSignedVnd(change)}
+      </div>
+    </div>
   );
 }
-
-function shortLevelLabel(label: string): string {
-  if (label === "Rất thấp") return "R.Thấp";
-  if (label === "Trung bình") return "TB";
-  if (label === "Rất cao") return "R.Cao";
-  return label;
-}
-
 function HistoryTooltip({
   active,
   payload,
@@ -369,18 +319,56 @@ function HistoryTooltip({
         {dateLabel(point.date)}
       </div>
       <div className="space-y-1 text-foreground">
-        <TooltipLine label="Giá" value={formatPrice(point.close)} />
-        <TooltipLine label="Thay đổi" value={formatPercent(point.changePercent, true)} />
         <TooltipLine
-          label="Spread"
-          value={<RateValue value={point.spreadPercent} type="spread" />}
+          label="Mua vào"
+          value={
+            <PriceWithChange
+              price={point.buyClose}
+              change={point.buyChangeVnd}
+              align="right"
+              compact
+            />
+          }
         />
         <TooltipLine
-          label="Premium"
-          value={<RateValue value={point.premiumPercent} type="premium" />}
+          label="Bán ra"
+          value={
+            <PriceWithChange
+              price={point.close}
+              change={point.sellChangeVnd}
+              align="right"
+              compact
+            />
+          }
         />
       </div>
       {point.isToday ? <p className="mt-2 text-muted">Dữ liệu hôm nay có thể thay đổi.</p> : null}
+    </div>
+  );
+}
+
+function PriceWithChange({
+  label,
+  price,
+  change,
+  align = "left",
+  compact = false
+}: {
+  label?: string;
+  price: number;
+  change: number | null;
+  align?: "left" | "right";
+  compact?: boolean;
+}) {
+  return (
+    <div className={align === "right" ? "text-right" : ""}>
+      <div className="font-medium text-foreground">
+        {label ? <span className="mr-1 text-xs font-medium text-muted">{label}</span> : null}
+        {formatFullPrice(price)}
+      </div>
+      <div className={`${compact ? "text-[11px]" : "text-xs"} font-semibold ${changeColor(change)}`}>
+        {formatSignedVnd(change)}
+      </div>
     </div>
   );
 }
