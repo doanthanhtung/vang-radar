@@ -13,7 +13,7 @@ export function middleware(request: NextRequest) {
   if (host === "www.vangscore.com") {
     const url = request.nextUrl.clone();
     url.protocol = "https";
-    url.hostname = "vangscore.com";
+    url.host = "vangscore.com";
     return NextResponse.redirect(url, 308);
   }
 
