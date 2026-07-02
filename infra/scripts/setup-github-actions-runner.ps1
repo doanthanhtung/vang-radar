@@ -15,12 +15,20 @@ if ([string]::IsNullOrWhiteSpace($ProductionEnvPath)) {
   $ProductionEnvPath = Join-Path $repoRoot ".env"
 }
 
-$gh = Get-Command gh -ErrorAction SilentlyContinue
+$ghCommand = Get-Command gh -ErrorAction SilentlyContinue
+$gh = if ($ghCommand) { $ghCommand.Source } else { $null }
+if (-not $gh) {
+  $gh = @(
+    "C:\Program Files\GitHub CLI\gh.exe",
+    "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe"
+  ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+}
+
 if (-not $gh) {
   throw "GitHub CLI is not installed. Install it with: winget install --id GitHub.cli --exact"
 }
 
-& gh auth status
+& $gh auth status
 if ($LASTEXITCODE -ne 0) {
   throw "GitHub CLI is not authenticated. Run: gh auth login --hostname github.com --git-protocol https --web --scopes repo,workflow,admin:repo_hook"
 }
@@ -31,7 +39,7 @@ if ($SetProductionEnvSecret) {
   }
 
   Write-Host "Setting GitHub secret PRODUCTION_ENV from $ProductionEnvPath..." -ForegroundColor Cyan
-  & gh secret set PRODUCTION_ENV --repo $Repo --body-file $ProductionEnvPath
+  & $gh secret set PRODUCTION_ENV --repo $Repo --body-file $ProductionEnvPath
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to set GitHub secret PRODUCTION_ENV."
   }
@@ -42,7 +50,7 @@ Set-Location $RunnerRoot
 
 if (-not (Test-Path ".\config.cmd")) {
   Write-Host "Downloading latest GitHub Actions runner..." -ForegroundColor Cyan
-  $releaseJson = & gh api repos/actions/runner/releases/latest
+  $releaseJson = & $gh api repos/actions/runner/releases/latest
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to fetch latest GitHub Actions runner release."
   }
@@ -61,7 +69,7 @@ if (-not (Test-Path ".\config.cmd")) {
 
 if (-not (Test-Path ".\.runner")) {
   Write-Host "Registering runner $RunnerName for $Repo..." -ForegroundColor Cyan
-  $registrationToken = & gh api --method POST "repos/$Repo/actions/runners/registration-token" --jq ".token"
+  $registrationToken = & $gh api --method POST "repos/$Repo/actions/runners/registration-token" --jq ".token"
   if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($registrationToken)) {
     throw "Failed to create GitHub Actions runner registration token."
   }
