@@ -47,10 +47,11 @@ jobs:
           docker compose --profile tunnel -f $composeFile up -d postgres redis
           if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
 
-          docker compose -f $composeFile run --rm app-setup
+          docker compose -f $composeFile run --rm -T app-setup
           if ($LASTEXITCODE -ne 0) {
+            $setupExitCode = $LASTEXITCODE
             docker compose -f $composeFile logs --tail 120 app-setup
-            throw "App setup failed."
+            throw "App setup failed with exit code $setupExitCode."
           }
 
           docker compose --profile tunnel -f $composeFile up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
