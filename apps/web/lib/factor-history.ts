@@ -114,23 +114,41 @@ export function applyLiveTodayValue(
 export function applyLiveGoldPriceHistory(
   history: GoldPriceHistory,
   todayKey: string,
-  live: { sellPrice: number; premiumSellPct: number; spreadPct: number }
+  live: { buyPrice?: number; sellPrice: number; premiumSellPct: number; spreadPct: number }
 ): GoldPriceHistory {
   if (!Number.isFinite(live.sellPrice) || live.sellPrice <= 0) return history;
 
   const lastPoint = history.data[history.data.length - 1];
   const hasToday = lastPoint?.date === todayKey;
+  const buyPrice =
+    live.buyPrice !== undefined && Number.isFinite(live.buyPrice)
+      ? live.buyPrice
+      : live.sellPrice * (1 - live.spreadPct);
+  const previousBuyClose = hasToday
+    ? history.data[history.data.length - 2]?.buyClose
+    : lastPoint?.buyClose;
   const previousClose = hasToday ? history.data[history.data.length - 2]?.close : lastPoint?.close;
+  const buyChangeVnd =
+    previousBuyClose === undefined ? null : buyPrice - previousBuyClose;
+  const sellChangeVnd =
+    previousClose === undefined ? null : live.sellPrice - previousClose;
   const changePercent =
     previousClose && previousClose > 0 ? (live.sellPrice - previousClose) / previousClose : null;
   const today: DailyGoldPrice = {
     date: todayKey,
     open: hasToday ? lastPoint.open : previousClose ?? live.sellPrice,
-    high: hasToday ? Math.max(lastPoint.high, live.sellPrice) : Math.max(previousClose ?? live.sellPrice, live.sellPrice),
-    low: hasToday ? Math.min(lastPoint.low, live.sellPrice) : Math.min(previousClose ?? live.sellPrice, live.sellPrice),
+    high: hasToday
+      ? Math.max(lastPoint.high, buyPrice, live.sellPrice)
+      : Math.max(previousBuyClose ?? buyPrice, previousClose ?? live.sellPrice, buyPrice, live.sellPrice),
+    low: hasToday
+      ? Math.min(lastPoint.low, buyPrice, live.sellPrice)
+      : Math.min(previousBuyClose ?? buyPrice, previousClose ?? live.sellPrice, buyPrice, live.sellPrice),
+    buyClose: buyPrice,
     close: live.sellPrice,
     isToday: true,
     isTemporaryClose: true,
+    buyChangeVnd,
+    sellChangeVnd,
     changePercent,
     intradayRangePercent: null,
     spreadPercent: live.spreadPct,
