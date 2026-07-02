@@ -9,6 +9,14 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
 export function middleware(request: NextRequest) {
+  const host = request.headers.get("host")?.toLowerCase();
+  if (host === "www.vangscore.com") {
+    const url = request.nextUrl.clone();
+    url.protocol = "https";
+    url.hostname = "vangscore.com";
+    return NextResponse.redirect(url, 308);
+  }
+
   const pathname = request.nextUrl.pathname;
   if (isStaticAsset(pathname)) {
     return NextResponse.next();
