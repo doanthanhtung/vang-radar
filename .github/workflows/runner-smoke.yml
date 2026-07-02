@@ -1,0 +1,16 @@
+name: Runner Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Windows, vang-radar-prod]
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Print runner info
+        run: |
+          hostname
+          docker version --format '{{.Server.Version}}'
