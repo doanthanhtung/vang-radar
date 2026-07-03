@@ -11,6 +11,10 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   deploy:
     name: Deploy production
@@ -23,6 +27,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Write production environment
         env:
@@ -40,12 +46,25 @@ jobs:
           docker version
           docker compose version
 
-      - name: Build, migrate, seed, and start services
+      - name: Login to GitHub Container Registry
+        run: |
+          $env:GITHUB_TOKEN | docker login ghcr.io -u $env:GITHUB_ACTOR --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull, migrate, seed, and start services
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
           $composeFile = "infra/docker-compose.home-server.yml"
+          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
+          Write-Host "Deploying image $env:APP_IMAGE"
 
           docker compose --profile tunnel -f $composeFile up -d postgres redis
           if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
+
+          docker compose --profile tunnel -f $composeFile pull app-setup api worker web
+          if ($LASTEXITCODE -ne 0) { throw "Failed to pull production image." }
 
           docker compose -f $composeFile run --rm -T app-setup
           if ($LASTEXITCODE -ne 0) {
@@ -58,7 +77,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
 
       - name: Health check
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
+          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
+
           function Wait-HttpOk {
             param(
               [Parameter(Mandatory = $true)][string]$Url,
@@ -83,4 +106,8 @@ jobs:
 
       - name: Show service status
         if: always()
-        run: docker compose --profile tunnel -f infra/docker-compose.home-server.yml ps
+        env:
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
+          docker compose --profile tunnel -f infra/docker-compose.home-server.yml ps
