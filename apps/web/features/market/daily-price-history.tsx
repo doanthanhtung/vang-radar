@@ -84,13 +84,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         </span>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4">
-        <SummaryCard
-          label="Mua vào"
-          value={formatFullPrice(latest.buyClose)}
-          meta={formatSignedVnd(latest.buyChangeVnd)}
-          tone={changeColor(latest.buyChangeVnd)}
-        />
+      <div className="mb-3 sm:mb-4">
         <SummaryCard
           label="Bán ra"
           value={formatFullPrice(latest.close)}
@@ -141,8 +135,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         <table className="w-full table-fixed text-left text-sm">
           <thead className="border-y border-white/[0.08] text-muted">
             <tr>
-              <th className="w-[28%] px-2 py-2 font-medium">Ngày</th>
-              <th className="px-2 py-2 text-right font-medium">Mua vào</th>
+              <th className="w-[42%] px-2 py-2 font-medium">Ngày</th>
               <th className="px-2 py-2 text-right font-medium">Bán ra</th>
             </tr>
           </thead>
@@ -202,9 +195,6 @@ function HistoryRow({ point }: { point: DailyGoldPrice }) {
         {dateLabel(point.date)} {point.isToday ? <TodayBadges /> : null}
       </td>
       <td className="px-2 py-2 text-right">
-        <PriceWithChange price={point.buyClose} change={point.buyChangeVnd} align="right" />
-      </td>
-      <td className="px-2 py-2 text-right">
         <PriceWithChange price={point.close} change={point.sellChangeVnd} align="right" />
       </td>
     </tr>
@@ -244,10 +234,7 @@ function MobileHistoryTimeline({
               <span className="text-[11px] text-slate-500">{shortDateLabel(point.date)}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5">
-              <MobilePriceBox label="Mua vào" price={point.buyClose} change={point.buyChangeVnd} />
-              <MobilePriceBox label="Bán ra" price={point.close} change={point.sellChangeVnd} />
-            </div>
+            <MobilePriceBox label="Bán ra" price={point.close} change={point.sellChangeVnd} />
           </button>
         );
       })}
