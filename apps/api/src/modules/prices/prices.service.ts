@@ -9,9 +9,12 @@ type DailyPrice = {
   open: number;
   high: number;
   low: number;
+  buyClose: number;
   close: number;
   isToday: boolean;
   isTemporaryClose: boolean;
+  buyChangeVnd: number | null;
+  sellChangeVnd: number | null;
   changePercent: number | null;
   intradayRangePercent: number | null;
   spreadPercent: number | null;
@@ -74,7 +77,7 @@ export class PricesService {
   }
 
   async getDailyHistory(productCode: ProductCode, days: number) {
-    const cacheKey = `product:${productCode}:prices:daily-history:${days}:v1`;
+    const cacheKey = `product:${productCode}:prices:daily-history:${days}:v2`;
     const cached = await this.redis.getJson<{
       type: ProductCode;
       days: number;
@@ -116,27 +119,45 @@ export class PricesService {
     for (const metric of metrics) metricByDay.set(vietnamDate(metric.time), metric);
 
     const today = vietnamDate(new Date());
+    let previousBuyClose: number | null = null;
     let previousClose: number | null = null;
     const data: DailyPrice[] = Array.from(priceDays.entries())
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, dailyPrices]) => {
         const open = Number(dailyPrices[0]!.sellPriceVnd);
         const latestPrice = dailyPrices[dailyPrices.length - 1]!;
+        const buyClose = Number(latestPrice.buyPriceVnd);
         const close = Number(latestPrice.sellPriceVnd);
-        const high = Math.max(...dailyPrices.map((price) => Number(price.sellPriceVnd)));
-        const low = Math.min(...dailyPrices.map((price) => Number(price.sellPriceVnd)));
+        const high = Math.max(
+          ...dailyPrices.flatMap((price) => [
+            Number(price.buyPriceVnd),
+            Number(price.sellPriceVnd)
+          ])
+        );
+        const low = Math.min(
+          ...dailyPrices.flatMap((price) => [
+            Number(price.buyPriceVnd),
+            Number(price.sellPriceVnd)
+          ])
+        );
         const metric = metricByDay.get(date);
+        const buyChangeVnd = previousBuyClose === null ? null : buyClose - previousBuyClose;
+        const sellChangeVnd = previousClose === null ? null : close - previousClose;
         const changePercent =
           previousClose && previousClose !== 0 ? (close - previousClose) / previousClose : null;
+        previousBuyClose = buyClose;
         previousClose = close;
         return {
           date,
           open,
           high,
           low,
+          buyClose,
           close,
           isToday: date === today,
           isTemporaryClose: date === today,
+          buyChangeVnd,
+          sellChangeVnd,
           changePercent,
           intradayRangePercent: open === 0 ? null : (high - low) / open,
           spreadPercent: calculateSpreadPct(
