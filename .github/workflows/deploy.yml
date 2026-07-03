@@ -30,7 +30,32 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      - name: Skip stale deploys
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          "DEPLOY_IS_LATEST=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          if ($env:EVENT_NAME -ne "workflow_run") {
+            Write-Host "Manual deploy requested for $env:DEPLOY_SHA; stale deploy guard is bypassed."
+            return
+          }
+
+          git fetch --quiet origin main
+          if ($LASTEXITCODE -ne 0) { throw "Failed to fetch latest main." }
+
+          $latestMain = (git rev-parse origin/main).Trim()
+          if ($env:DEPLOY_SHA -ne $latestMain) {
+            "DEPLOY_IS_LATEST=false" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            Write-Host "::notice::Skipping stale deploy. Candidate $env:DEPLOY_SHA is not latest main $latestMain."
+            return
+          }
+
+          Write-Host "Deploy candidate $env:DEPLOY_SHA is latest main."
+
       - name: Write production environment
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         env:
           PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
         run: |
@@ -42,11 +67,13 @@ jobs:
           [System.IO.File]::WriteAllText((Join-Path $PWD ".env"), $env:PRODUCTION_ENV, $encoding)
 
       - name: Check Docker
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         run: |
           docker version
           docker compose version
 
       - name: Login to GitHub Container Registry
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -54,6 +81,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN || github.token }}
 
       - name: Pull, migrate, seed, and start services
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         env:
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
@@ -78,6 +106,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
 
       - name: Health check
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         env:
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
@@ -106,7 +135,7 @@ jobs:
           Wait-HttpOk -Url "http://127.0.0.1:4000/api/v1/health"
 
       - name: Show service status
-        if: always()
+        if: ${{ always() && env.DEPLOY_IS_LATEST == 'true' }}
         env:
           IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
