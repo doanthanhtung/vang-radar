@@ -7,11 +7,12 @@ import { rangeToDate } from "../../common/range.js";
 
 const HISTORY_CACHE_TTL_SECONDS = 60;
 const HISTORY_MAX_POINTS: Record<HistoryRange, number> = {
-  "7d": 200,
-  "30d": 240,
+  "7d": 7,
+  "30d": 30,
   "180d": 180,
   "1y": 365
 };
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 type MetricHistoryPoint = {
   time: Date;
@@ -21,13 +22,53 @@ type MetricHistoryPoint = {
   spreadPct: unknown;
 };
 
-function downsampleHistory(points: MetricHistoryPoint[], maxPoints: number): MetricHistoryPoint[] {
-  if (points.length <= maxPoints) return points;
+function vietnamDate(value: Date): string {
+  const local = new Date(value.getTime() + VIETNAM_OFFSET_MS);
+  return local.toISOString().slice(0, 10);
+}
 
-  return Array.from({ length: maxPoints }, (_, index) => {
-    const end = Math.floor(((index + 1) * points.length) / maxPoints);
-    return points[Math.max(0, end - 1)]!;
-  });
+function isHistoricalBackfillPoint(point: MetricHistoryPoint): boolean {
+  return (
+    point.time.getUTCHours() === 5 &&
+    point.time.getUTCMinutes() === 0 &&
+    point.time.getUTCSeconds() === 0 &&
+    point.time.getUTCMilliseconds() === 0
+  );
+}
+
+function pickDailyHistory(points: MetricHistoryPoint[]): MetricHistoryPoint[] {
+  const byDate = new Map<string, MetricHistoryPoint>();
+  const today = vietnamDate(new Date());
+
+  for (const point of points) {
+    const date = vietnamDate(point.time);
+    const existing = byDate.get(date);
+    if (!existing) {
+      byDate.set(date, point);
+      continue;
+    }
+
+    if (date === today) {
+      if (point.time > existing.time) byDate.set(date, point);
+      continue;
+    }
+
+    const pointIsBackfill = isHistoricalBackfillPoint(point);
+    const existingIsBackfill = isHistoricalBackfillPoint(existing);
+
+    if (pointIsBackfill && !existingIsBackfill) {
+      byDate.set(date, point);
+    } else if (pointIsBackfill === existingIsBackfill && point.time > existing.time) {
+      byDate.set(date, point);
+    }
+  }
+
+  return [...byDate.values()].sort((left, right) => left.time.getTime() - right.time.getTime());
+}
+
+function limitDailyHistory(points: MetricHistoryPoint[], maxPoints: number): MetricHistoryPoint[] {
+  if (points.length <= maxPoints) return points;
+  return points.slice(points.length - maxPoints);
 }
 
 @Injectable()
@@ -52,14 +93,13 @@ export class MetricsService {
   async getHistory(productCode: ProductCode, range: HistoryRange) {
     if (await hasMockLatestInputs(this.prisma)) return [];
 
-    const cacheKey = `product:${productCode}:metrics:history:${range}:v3`;
+    const cacheKey = `product:${productCode}:metrics:history:${range}:v6`;
     const cached = await this.redis.getJson<MetricHistoryPoint[]>(cacheKey);
     if (cached) return cached;
 
     const history = await this.prisma.goldMetric.findMany({
       where: { product: { code: productCode }, time: { gte: rangeToDate(range) } },
       orderBy: { time: "asc" },
-      take: 2000,
       select: {
         time: true,
         domesticBuyPriceVnd: true,
@@ -69,7 +109,9 @@ export class MetricsService {
       }
     });
 
-    const result = downsampleHistory(history, HISTORY_MAX_POINTS[range]).map((point) => {
+    const points = limitDailyHistory(pickDailyHistory(history), HISTORY_MAX_POINTS[range]);
+
+    const result = points.map((point) => {
       return {
         ...point,
         spreadPct: calculateSpreadPct(

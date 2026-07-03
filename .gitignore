@@ -8,6 +8,8 @@ coverage
 .env
 *.log
 output
+terminals
+tmp-*.json
 
 # Local tooling / IDE artifacts
 .codegraph

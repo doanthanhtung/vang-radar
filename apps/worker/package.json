@@ -7,6 +7,8 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/worker/src/main.js",
+    "backfill:domestic-gold-prices": "tsx src/scripts/backfill-domestic-gold-prices.ts",
+    "backfill:historical-metrics": "tsx src/scripts/backfill-historical-metrics.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"

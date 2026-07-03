@@ -145,7 +145,7 @@ export class MarketService {
     const [previousDayCloses, historySampleSizes] = await Promise.all([
       Promise.all(
         products.map(async (product) => {
-          const close = await this.prisma.domesticGoldPrice.findFirst({
+          const rawPriceClose = await this.prisma.domesticGoldPrice.findFirst({
             where: {
               productId: product.id,
               isValid: true,
@@ -155,7 +155,27 @@ export class MarketService {
             orderBy: { time: "desc" },
             select: { buyPriceVnd: true, sellPriceVnd: true }
           });
-          return [product.id, close] as const;
+
+          if (rawPriceClose) return [product.id, rawPriceClose] as const;
+
+          const metricClose = await this.prisma.goldMetric.findFirst({
+            where: {
+              productId: product.id,
+              time: { lt: previousDayCutoff }
+            },
+            orderBy: { time: "desc" },
+            select: { domesticBuyPriceVnd: true, domesticSellPriceVnd: true }
+          });
+
+          return [
+            product.id,
+            metricClose
+              ? {
+                  buyPriceVnd: metricClose.domesticBuyPriceVnd,
+                  sellPriceVnd: metricClose.domesticSellPriceVnd
+                }
+              : null
+          ] as const;
         })
       ).then((entries) => new Map(entries)),
       Promise.all(
