@@ -34,6 +34,11 @@ function formatSignedVnd(value: number | null): string {
   return `${sign}${Math.abs(value).toLocaleString("vi-VN")} ₫`;
 }
 
+function formatNonZeroSignedVnd(value: number | null): string | null {
+  if (value === 0) return null;
+  return formatSignedVnd(value);
+}
+
 function changeColor(value: number | null): string {
   if (value === null || value === 0) return "text-muted";
   return value > 0 ? "text-positive" : "text-red-400";
@@ -68,6 +73,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
 
   const latest = history.data[history.data.length - 1]!;
   const domain = chartDomain(history.data);
+  const latestChange = formatNonZeroSignedVnd(latest.sellChangeVnd);
   const title =
     history.data.length >= 7
       ? "Diễn biến 7 ngày gần nhất"
@@ -88,7 +94,7 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         <SummaryCard
           label="Bán ra"
           value={formatFullPrice(latest.close)}
-          meta={formatSignedVnd(latest.sellChangeVnd)}
+          meta={latestChange ?? undefined}
           tone={changeColor(latest.sellChangeVnd)}
         />
       </div>
@@ -261,6 +267,7 @@ function MobilePriceBox({
   price: number;
   change: number | null;
 }) {
+  const changeLabel = formatNonZeroSignedVnd(change);
   return (
     <div className="rounded bg-white/[0.035] px-2 py-1.5">
       <div className="flex items-baseline justify-between gap-1.5">
@@ -269,13 +276,15 @@ function MobilePriceBox({
           {formatCompactPrice(price)}
         </span>
       </div>
-      <div
-        className={`mt-1 whitespace-nowrap text-right text-[11px] font-semibold leading-none ${changeColor(
-          change
-        )}`}
-      >
-        {formatSignedVnd(change)}
-      </div>
+      {changeLabel ? (
+        <div
+          className={`mt-1 whitespace-nowrap text-right text-[11px] font-semibold leading-none ${changeColor(
+            change
+          )}`}
+        >
+          {changeLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -326,15 +335,20 @@ function PriceWithChange({
   align?: "left" | "right";
   compact?: boolean;
 }) {
+  const changeLabel = formatNonZeroSignedVnd(change);
   return (
     <div className={align === "right" ? "text-right" : ""}>
       <div className="font-medium text-foreground">
         {label ? <span className="mr-1 text-xs font-medium text-muted">{label}</span> : null}
         {formatFullPrice(price)}
       </div>
-      <div className={`${compact ? "text-[11px]" : "text-xs"} font-semibold ${changeColor(change)}`}>
-        {formatSignedVnd(change)}
-      </div>
+      {changeLabel ? (
+        <div
+          className={`${compact ? "text-[11px]" : "text-xs"} font-semibold ${changeColor(change)}`}
+        >
+          {changeLabel}
+        </div>
+      ) : null}
     </div>
   );
 }
