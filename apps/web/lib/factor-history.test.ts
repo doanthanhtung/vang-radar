@@ -228,4 +228,94 @@ describe("buildAverageDailyGoldHistory", () => {
     expect(history[1]?.value).toBeCloseTo(0.14);
     expect(history[1]?.change).toBeCloseTo(0.05);
   });
+
+  it("averages daily spread amount across products", () => {
+    const histories: GoldPriceHistory[] = [
+      {
+        type: "SJC_BAR",
+        days: 7,
+        data: [
+          {
+            date: "2026-06-19",
+            open: 100,
+            high: 103,
+            low: 98,
+            buyClose: 98,
+            close: 101,
+            isToday: false,
+            isTemporaryClose: false,
+            buyChangeVnd: null,
+            sellChangeVnd: null,
+            changePercent: null,
+            intradayRangePercent: null,
+            spreadPercent: 0.03,
+            premiumPercent: 0.1
+          },
+          {
+            date: "2026-06-20",
+            open: 101,
+            high: 105,
+            low: 100,
+            buyClose: 100,
+            close: 104,
+            isToday: false,
+            isTemporaryClose: false,
+            buyChangeVnd: 2,
+            sellChangeVnd: 3,
+            changePercent: null,
+            intradayRangePercent: null,
+            spreadPercent: 0.038,
+            premiumPercent: 0.12
+          }
+        ]
+      },
+      {
+        type: "PNJ_RING_9999",
+        days: 7,
+        data: [
+          {
+            date: "2026-06-19",
+            open: 100,
+            high: 102,
+            low: 97,
+            buyClose: 97,
+            close: 101,
+            isToday: false,
+            isTemporaryClose: false,
+            buyChangeVnd: null,
+            sellChangeVnd: null,
+            changePercent: null,
+            intradayRangePercent: null,
+            spreadPercent: 0.04,
+            premiumPercent: 0.08
+          },
+          {
+            date: "2026-06-20",
+            open: 101,
+            high: 104,
+            low: 100,
+            buyClose: 101,
+            close: 104,
+            isToday: false,
+            isTemporaryClose: false,
+            buyChangeVnd: 4,
+            sellChangeVnd: 3,
+            changePercent: null,
+            intradayRangePercent: null,
+            spreadPercent: 0.029,
+            premiumPercent: 0.16
+          }
+        ]
+      }
+    ];
+
+    const history = buildAverageDailyGoldHistory(histories, "spreadAmount");
+
+    expect(history[0]?.date).toBe("2026-06-19");
+    expect(history[0]?.value).toBe(3.5);
+    expect(history[0]?.change).toBeNull();
+    expect(history[1]?.date).toBe("2026-06-20");
+    expect(history[1]?.value).toBe(3.5);
+    expect(history[1]?.change).toBe(0);
+  });
 });

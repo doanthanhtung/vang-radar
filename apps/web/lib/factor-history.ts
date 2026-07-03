@@ -49,13 +49,14 @@ export function buildDxyDailyHistory(points: DxyHistoryPoint[]): FactorHistoryPo
 
 export function buildAverageDailyGoldHistory(
   histories: GoldPriceHistory[],
-  field: "premiumPercent" | "spreadPercent"
+  field: "premiumPercent" | "spreadPercent" | "spreadAmount"
 ): FactorHistoryPoint[] {
   const valuesByDay = new Map<string, number[]>();
 
   for (const history of histories) {
     for (const point of history.data) {
-      const value = point[field];
+      const value =
+        field === "spreadAmount" ? point.close - point.buyClose : point[field];
       if (value === null || !Number.isFinite(value)) continue;
       valuesByDay.set(point.date, [...(valuesByDay.get(point.date) ?? []), value]);
     }

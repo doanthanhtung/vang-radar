@@ -34,7 +34,7 @@ import { ProductTable } from "./product-table";
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
 type ExpandedFactor = "xau" | "dxy" | "usd" | "premium" | "spread";
-type FactorHistoryFormat = "usd" | "vnd" | "percent" | "index";
+type FactorHistoryFormat = "usd" | "vnd" | "money" | "percent" | "index";
 
 export function LiveMarketDashboard({ initialSummary }: { initialSummary: MarketSummary }) {
   const [summary, setSummary] = useState(initialSummary);
@@ -113,9 +113,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
       dxy: null,
       usd: summary.world.usdVnd > 0 ? summary.world.usdVnd : null,
       premium: Number.isFinite(averagePremium) ? averagePremium : null,
-      spread: Number.isFinite(averageSpread) ? averageSpread : null
+      spread: Number.isFinite(averageSpreadAbs) ? averageSpreadAbs : null
     }),
-    [summary.world.xauUsdPerOz, summary.world.usdVnd, averagePremium, averageSpread]
+    [summary.world.xauUsdPerOz, summary.world.usdVnd, averagePremium, averageSpreadAbs]
   );
 
   const displayedFactorHistory = useMemo(() => {
@@ -165,7 +165,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
       const histories = await Promise.all(productCodes.map((code) => getProductHistory(code)));
       return buildAverageDailyGoldHistory(
         histories,
-        factor === "premium" ? "premiumPercent" : "spreadPercent"
+        factor === "premium" ? "premiumPercent" : "spreadAmount"
       );
     },
     [getProductHistory, productCodes]
@@ -342,7 +342,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 value={formatVndSafe(averageSpreadAbs)}
                 meta={formatPercent(averageSpread)}
                 delta={getLatestFactorChange(factorIndicatorHistory.spread)}
-                format="percent"
+                format="money"
                 expanded={expandedFactor === "spread"}
                 onToggle={() => toggleFactor("spread")}
               />
@@ -358,7 +358,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                         ? "index"
                         : expandedFactor === "usd"
                           ? "vnd"
-                          : "percent"
+                          : expandedFactor === "spread"
+                            ? "money"
+                            : "percent"
                   }
                   loading={factorHistoryLoading === expandedFactor}
                   error={factorHistoryError === expandedFactor}
@@ -585,6 +587,10 @@ function formatHistoryValue(value: number, format: FactorHistoryFormat): string 
     return value.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
   }
 
+  if (format === "money") {
+    return formatVnd(value);
+  }
+
   if (format === "index") {
     return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
@@ -606,6 +612,10 @@ function formatHistoryChange(change: number | null, format: FactorHistoryFormat)
     return `${change > 0 ? "+" : "−"}${Math.abs(change).toLocaleString("vi-VN", {
       maximumFractionDigits: 0
     })}`;
+  }
+
+  if (format === "money") {
+    return `${change > 0 ? "+" : "−"}${formatVnd(Math.abs(change))}`;
   }
 
   if (format === "index") {
@@ -631,6 +641,10 @@ function formatDeltaValue(delta: number, format: FactorHistoryFormat): string {
 
   if (format === "vnd") {
     return value.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
+  }
+
+  if (format === "money") {
+    return formatVnd(value);
   }
 
   if (format === "index") {
