@@ -1,0 +1,8 @@
+ingress:
+  - hostname: vangscore.com
+    service: http://web:3000
+  - hostname: www.vangscore.com
+    service: http://web:3000
+  - hostname: api.vangscore.com
+    service: http://api:4000
+  - service: http_status:404

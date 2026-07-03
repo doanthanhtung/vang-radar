@@ -137,9 +137,11 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: ["tunnel"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run
+    command: tunnel --config /etc/cloudflared/config.yml --no-autoupdate run
     env_file:
       - ../.env
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
     depends_on:
       - web
       - api
