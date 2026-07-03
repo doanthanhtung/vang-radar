@@ -5,7 +5,11 @@ describe("MarketService", () => {
   it("ignores absurd cached premium and recalculates stale bad metrics from valid raw inputs", async () => {
     const prisma = {
       domesticGoldPrice: {
-        findFirst: async () => ({ source: { code: "TWENTY_FOUR_H_GOLD" } })
+        findFirst: async () => ({
+          buyPriceVnd: 147_000_000,
+          sellPriceVnd: 149_000_000,
+          source: { code: "TWENTY_FOUR_H_GOLD" }
+        })
       },
       fxRate: {
         findFirst: async () => ({
@@ -55,7 +59,8 @@ describe("MarketService", () => {
       }
     };
     const redis = {
-      getJson: async () => ({ products: [{ premiumSellPct: 1102.1388 }] })
+      getJson: async () => ({ products: [{ premiumSellPct: 1102.1388 }] }),
+      setJson: async () => undefined
     };
     const service = new MarketService(prisma as never, redis as never);
 
@@ -63,5 +68,9 @@ describe("MarketService", () => {
 
     expect(summary.products[0]?.premiumSellPct).toBeCloseTo(1.00046, 5);
     expect(summary.products[0]?.spreadPct).toBeCloseTo(2_500_000 / 150_500_000, 5);
+    expect(summary.products[0]?.previousDayClose).toEqual({
+      buyPriceVnd: 147_000_000,
+      sellPriceVnd: 149_000_000
+    });
   });
 });

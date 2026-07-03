@@ -103,7 +103,8 @@ export class MarketService {
       };
     }
 
-    const cached = await this.redis.getJson<MarketSummary>("market:summary:latest:v3");
+    const cacheKey = "market:summary:latest:v4";
+    const cached = await this.redis.getJson<MarketSummary>(cacheKey);
     if (cached && !hasUnreasonableSummary(cached)) return cached;
 
     const latestFx = await this.prisma.fxRate.findFirst({
@@ -201,7 +202,7 @@ export class MarketService {
         ? calculateWorldVndPerLuong(effectiveWorldXau, effectiveUsdVnd)
         : Number(firstMetric?.worldVndPerLuong ?? 0);
 
-    return {
+    const summary: MarketSummary = {
       time:
         (latestFx || latestWorld)?.time?.toISOString() ??
         firstMetric?.time.toISOString() ??
@@ -290,6 +291,9 @@ export class MarketService {
         })
         .filter((product): product is MarketSummaryProduct => product !== null)
     };
+
+    await this.redis.setJson(cacheKey, summary, 300);
+    return summary;
   }
 
   async getWorldGoldHistory(days: number) {
