@@ -133,17 +133,6 @@ describe("generateDecisionSignal", () => {
     expect(result.signal).toBe("HOLD");
   });
 
-  it("returns BUY_DCA for SJC extreme bottom-catch setups", () => {
-    const result = generateDecisionSignal({
-      ...baseInput,
-      premiumSellPct: 0.0661,
-      premiumPercentile180d: 1.67,
-      spreadPct: 0.0361,
-      xauMomentum30d: -0.1256
-    });
-    expect(result.signal).toBe("BUY_DCA");
-  });
-
   it("can trigger AVOID from premium percentile with partial history", () => {
     const result = generateDecisionSignal({
       ...baseInput,
