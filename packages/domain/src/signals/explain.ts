@@ -38,7 +38,7 @@ const DEFAULT_BUY_THRESHOLDS: BuyThresholds = {
 
 const SJC_BUY_THRESHOLDS: BuyThresholds = {
   premiumPercentileBuy: 10,
-  premiumBuyAbsolute: 0.08,
+  premiumBuyAbsolute: 0.05,
   xauMomentumBuyFloor: -0.08
 };
 

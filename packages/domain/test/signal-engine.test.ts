@@ -44,7 +44,7 @@ describe("generateDecisionSignal", () => {
   it("returns BUY_DCA for SJC when premium is extremely low, spread is normal, and world momentum is acceptable", () => {
     const result = generateDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 5,
       spreadPercentile180d: 78,
       spreadPct: 0.02,
@@ -74,7 +74,7 @@ describe("generateDecisionSignal", () => {
   it("returns BUY_DCA with partial history and 7d momentum fallback", () => {
     const result = generateDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 5,
       spreadPct: 0.02,
       premiumSampleSize180d: 3,
@@ -102,7 +102,7 @@ describe("generateDecisionSignal", () => {
   it("does not return BUY_DCA when world gold drops more than 3%", () => {
     const result = generateDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 10,
       spreadPct: 0.02,
       xauMomentum7d: -0.09,
@@ -114,8 +114,19 @@ describe("generateDecisionSignal", () => {
   it("does not return BUY_DCA for SJC when premium is not in the strongest historic zone", () => {
     const result = generateDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 25,
+      spreadPct: 0.02,
+      xauMomentum30d: 0.01
+    });
+    expect(result.signal).toBe("HOLD");
+  });
+
+  it("does not return BUY_DCA for SJC when absolute premium is above the recommended cap", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.07,
+      premiumPercentile180d: 5,
       spreadPct: 0.02,
       xauMomentum30d: 0.01
     });
@@ -201,7 +212,7 @@ describe("explainDecisionSignal", () => {
   it("includes prior non-matching rules before the matched rule", () => {
     const explanation = explainDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 5,
       spreadPct: 0.02,
       xauMomentum30d: 0.01
@@ -263,7 +274,7 @@ describe("explainDecisionSignal", () => {
   it("uses absolute spread threshold instead of spread percentile for BUY_DCA", () => {
     const explanation = explainDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 5,
       spreadPct: 0.02,
       spreadPercentile180d: 78,
@@ -281,7 +292,7 @@ describe("explainDecisionSignal", () => {
   it("shows partial momentum lookback when fewer than 7 days are available", () => {
     const explanation = explainDecisionSignal({
       ...baseInput,
-      premiumSellPct: 0.07,
+      premiumSellPct: 0.04,
       premiumPercentile180d: 5,
       spreadPct: 0.02,
       xauMomentum30d: null,
