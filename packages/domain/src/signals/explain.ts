@@ -28,18 +28,30 @@ type BuyThresholds = {
   premiumPercentileBuy: number;
   premiumBuyAbsolute: number;
   xauMomentumBuyFloor: number;
+  bottomCatchPremiumPercentile: number;
+  bottomCatchPremiumAbsolute: number;
+  bottomCatchSpreadAbsolute: number;
+  bottomCatchXauMomentumFloor: number;
 };
 
 const DEFAULT_BUY_THRESHOLDS: BuyThresholds = {
   premiumPercentileBuy: 40,
   premiumBuyAbsolute: Number.POSITIVE_INFINITY,
-  xauMomentumBuyFloor: -0.03
+  xauMomentumBuyFloor: -0.03,
+  bottomCatchPremiumPercentile: Number.NEGATIVE_INFINITY,
+  bottomCatchPremiumAbsolute: Number.NEGATIVE_INFINITY,
+  bottomCatchSpreadAbsolute: Number.NEGATIVE_INFINITY,
+  bottomCatchXauMomentumFloor: Number.POSITIVE_INFINITY
 };
 
 const SJC_BUY_THRESHOLDS: BuyThresholds = {
   premiumPercentileBuy: 10,
   premiumBuyAbsolute: 0.05,
-  xauMomentumBuyFloor: -0.08
+  xauMomentumBuyFloor: -0.08,
+  bottomCatchPremiumPercentile: 2,
+  bottomCatchPremiumAbsolute: 0.07,
+  bottomCatchSpreadAbsolute: 0.04,
+  bottomCatchXauMomentumFloor: -0.13
 };
 
 interface PercentileHistory {
@@ -267,8 +279,32 @@ function isXauMomentumAcceptableForBuy(
   xauMomentum: ResolvedMomentum,
   buyThresholds: BuyThresholds
 ): boolean {
+  return xauMomentum.value !== null && xauMomentum.value >= buyThresholds.xauMomentumBuyFloor;
+}
+
+function isBottomCatchAcceptableForBuy(
+  input: SignalInput,
+  premiumPercentile: number,
+  premiumHistory: PercentileHistory,
+  xauMomentum: ResolvedMomentum,
+  buyThresholds: BuyThresholds
+): boolean {
   return (
-    xauMomentum.value !== null && xauMomentum.value >= buyThresholds.xauMomentumBuyFloor
+    premiumHistory.usable &&
+    xauMomentum.value !== null &&
+    premiumPercentile <= buyThresholds.bottomCatchPremiumPercentile &&
+    input.premiumSellPct <= buyThresholds.bottomCatchPremiumAbsolute &&
+    input.spreadPct <= buyThresholds.bottomCatchSpreadAbsolute &&
+    xauMomentum.value >= buyThresholds.bottomCatchXauMomentumFloor
+  );
+}
+
+function isBottomCatchEnabled(buyThresholds: BuyThresholds): boolean {
+  return (
+    Number.isFinite(buyThresholds.bottomCatchPremiumPercentile) &&
+    Number.isFinite(buyThresholds.bottomCatchPremiumAbsolute) &&
+    Number.isFinite(buyThresholds.bottomCatchSpreadAbsolute) &&
+    Number.isFinite(buyThresholds.bottomCatchXauMomentumFloor)
   );
 }
 
@@ -285,6 +321,14 @@ function evaluateBuyDcaRule(
   const spreadAcceptable = isSpreadAcceptableForBuy(input);
   const premiumAbsoluteAcceptable = isPremiumAbsoluteAcceptableForBuy(input, buyThresholds);
   const xauMomentumAcceptable = isXauMomentumAcceptableForBuy(xauMomentum, buyThresholds);
+  const bottomCatchEnabled = isBottomCatchEnabled(buyThresholds);
+  const bottomCatchAcceptable = isBottomCatchAcceptableForBuy(
+    input,
+    premiumPercentile,
+    premiumHistory,
+    xauMomentum,
+    buyThresholds
+  );
   const conditions: SignalConditionCheck[] = [
     {
       label: "Lịch sử premium",
@@ -301,40 +345,52 @@ function evaluateBuyDcaRule(
     {
       label: "Premium percentile (lịch sử hiện có)",
       actual: formatPercentileActual(premiumHistory),
-      requirement: `≤ ${formatPercentile(buyThresholds.premiumPercentileBuy)}`,
-      passed: premiumHistory.usable && premiumPercentile <= buyThresholds.premiumPercentileBuy
+      requirement: bottomCatchEnabled
+        ? `≤ ${formatPercentile(buyThresholds.premiumPercentileBuy)} hoặc bắt đáy ≤ ${formatPercentile(
+            buyThresholds.bottomCatchPremiumPercentile
+          )}`
+        : `≤ ${formatPercentile(buyThresholds.premiumPercentileBuy)}`,
+      passed:
+        bottomCatchAcceptable ||
+        (premiumHistory.usable && premiumPercentile <= buyThresholds.premiumPercentileBuy)
     },
     {
       label: "Premium bán tuyệt đối",
       actual: formatPercent(input.premiumSellPct),
       requirement: Number.isFinite(buyThresholds.premiumBuyAbsolute)
-        ? `≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}`
+        ? bottomCatchEnabled
+          ? `≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)} hoặc bắt đáy ≤ ${formatPercent(
+              buyThresholds.bottomCatchPremiumAbsolute
+            )}`
+          : `≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}`
         : "Không áp dụng",
-      passed: premiumAbsoluteAcceptable
+      passed: bottomCatchAcceptable || premiumAbsoluteAcceptable
     },
     {
       label: "Spread (mua–bán)",
       actual: formatPercent(input.spreadPct),
-      requirement: `≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)}`,
-      passed: spreadAcceptable
+      requirement: bottomCatchEnabled
+        ? `≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)} hoặc bắt đáy ≤ ${formatPercent(
+            buyThresholds.bottomCatchSpreadAbsolute
+          )}`
+        : `≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)}`,
+      passed: bottomCatchAcceptable || spreadAcceptable
     },
     {
       label: formatXauMomentumLabel(xauMomentum.days, "không giảm mạnh"),
       actual: hasXauMomentum ? formatPercent(xauMomentum.value!) : "Không có",
-      requirement: `≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}`,
-      passed: xauMomentumAcceptable
+      requirement: bottomCatchEnabled
+        ? `≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)} hoặc bắt đáy ≥ ${formatPercent(
+            buyThresholds.bottomCatchXauMomentumFloor
+          )}`
+        : `≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}`,
+      passed: bottomCatchAcceptable || xauMomentumAcceptable
     }
   ];
 
   const matched = conditions.every((condition) => condition.passed);
   const score = matched
-    ? Math.round(
-        65 +
-          Math.min(
-            15,
-            (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2
-          )
-      )
+    ? Math.round(65 + Math.min(15, (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2))
     : null;
 
   return {
@@ -398,8 +454,7 @@ function evaluateTakeProfitRule(
       actual: hasDomesticMomentum ? formatPercent(domesticMomentum7d.value!) : "Không có",
       requirement: `> ${formatPercent(VN_THRESHOLDS.domesticMomentumTakeProfit)}`,
       passed:
-        hasDomesticMomentum &&
-        domesticMomentum7d.value! > VN_THRESHOLDS.domesticMomentumTakeProfit
+        hasDomesticMomentum && domesticMomentum7d.value! > VN_THRESHOLDS.domesticMomentumTakeProfit
     },
     {
       label: "Spread (mua–bán)",
@@ -412,11 +467,7 @@ function evaluateTakeProfitRule(
   const matched = conditions.every((condition) => condition.passed);
   const score = matched
     ? Math.round(
-        20 +
-          Math.min(
-            15,
-            (premiumPercentile - VN_THRESHOLDS.premiumPercentileTakeProfit) / 2
-          )
+        20 + Math.min(15, (premiumPercentile - VN_THRESHOLDS.premiumPercentileTakeProfit) / 2)
       )
     : null;
 
@@ -573,8 +624,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
   const xauMomentum = resolveXauMomentum(input);
   const domesticMomentum7d: ResolvedMomentum = {
     value: input.domesticMomentum7d,
-    days:
-      input.domesticMomentum7d !== null ? (input.domesticMomentum7dDays ?? 7) : null
+    days: input.domesticMomentum7d !== null ? (input.domesticMomentum7dDays ?? 7) : null
   };
   const confidence = buildConfidence(input);
 
@@ -606,19 +656,38 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
   if (buyDcaRule.matched) {
     const buyThresholds = resolveBuyThresholds(input.productCode);
     const momentumDays = xauMomentum.days ?? 30;
+    const bottomCatchAcceptable = isBottomCatchAcceptableForBuy(
+      input,
+      premiumPercentile,
+      premiumHistory,
+      xauMomentum,
+      buyThresholds
+    );
     return {
       output: {
         signal: "BUY_DCA",
         score: buyDcaRule.score!,
         confidence,
-        reasons: [
-          "Premium đang thấp hơn nhiều giai đoạn trong lịch sử — vùng hấp dẫn cho tích sản.",
-          Number.isFinite(buyThresholds.premiumBuyAbsolute)
-            ? `Premium bán ≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}.`
-            : "Premium bán không bị chặn bởi ngưỡng tuyệt đối.",
-          `Spread mua–bán ≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)} (bình thường thị trường VN).`,
-          `Vàng thế giới ${momentumDays} ngày chưa giảm mạnh (≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}).`
-        ]
+        reasons:
+          bottomCatchAcceptable && !isPremiumAbsoluteAcceptableForBuy(input, buyThresholds)
+            ? [
+                "Premium rơi vào nhóm cực thấp so với 180 ngày gần đây — nhánh bắt đáy thận trọng.",
+                `Premium bán ≤ ${formatPercent(buyThresholds.bottomCatchPremiumAbsolute)} và spread ≤ ${formatPercent(
+                  buyThresholds.bottomCatchSpreadAbsolute
+                )}.`,
+                `Vàng thế giới ${momentumDays} ngày giảm mạnh nhưng còn trong ngưỡng bắt đáy (≥ ${formatPercent(
+                  buyThresholds.bottomCatchXauMomentumFloor
+                )}).`,
+                "Chỉ phù hợp chia nhỏ lệnh, không nên mua dồn."
+              ]
+            : [
+                "Premium đang thấp hơn nhiều giai đoạn trong lịch sử — vùng hấp dẫn cho tích sản.",
+                Number.isFinite(buyThresholds.premiumBuyAbsolute)
+                  ? `Premium bán ≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}.`
+                  : "Premium bán không bị chặn bởi ngưỡng tuyệt đối.",
+                `Spread mua–bán ≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)} (bình thường thị trường VN).`,
+                `Vàng thế giới ${momentumDays} ngày chưa giảm mạnh (≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}).`
+              ]
       },
       matchedRuleId: buyDcaRule.id,
       rules: [avoidRule, buyDcaRule]
