@@ -24,6 +24,24 @@ const VN_THRESHOLDS = {
   spreadPercentileTakeProfit: 75
 } as const;
 
+type BuyThresholds = {
+  premiumPercentileBuy: number;
+  premiumBuyAbsolute: number;
+  xauMomentumBuyFloor: number;
+};
+
+const DEFAULT_BUY_THRESHOLDS: BuyThresholds = {
+  premiumPercentileBuy: 40,
+  premiumBuyAbsolute: Number.POSITIVE_INFINITY,
+  xauMomentumBuyFloor: -0.03
+};
+
+const SJC_BUY_THRESHOLDS: BuyThresholds = {
+  premiumPercentileBuy: 10,
+  premiumBuyAbsolute: 0.08,
+  xauMomentumBuyFloor: -0.08
+};
+
 interface PercentileHistory {
   percentile: number | null;
   sampleSize: number;
@@ -233,9 +251,24 @@ function isSpreadAcceptableForBuy(input: SignalInput): boolean {
   return input.spreadPct <= VN_THRESHOLDS.spreadBuyAbsolute;
 }
 
-function isXauMomentumAcceptableForBuy(xauMomentum: ResolvedMomentum): boolean {
+function resolveBuyThresholds(productCode: SignalInput["productCode"]): BuyThresholds {
+  return productCode === "SJC_BAR" ? SJC_BUY_THRESHOLDS : DEFAULT_BUY_THRESHOLDS;
+}
+
+function isPremiumAbsoluteAcceptableForBuy(
+  input: SignalInput,
+  buyThresholds: BuyThresholds
+): boolean {
+  if (!Number.isFinite(buyThresholds.premiumBuyAbsolute)) return true;
+  return input.premiumSellPct <= buyThresholds.premiumBuyAbsolute;
+}
+
+function isXauMomentumAcceptableForBuy(
+  xauMomentum: ResolvedMomentum,
+  buyThresholds: BuyThresholds
+): boolean {
   return (
-    xauMomentum.value !== null && xauMomentum.value >= VN_THRESHOLDS.xauMomentumBuyFloor
+    xauMomentum.value !== null && xauMomentum.value >= buyThresholds.xauMomentumBuyFloor
   );
 }
 
@@ -247,9 +280,11 @@ function evaluateBuyDcaRule(
   spreadHistory: PercentileHistory,
   xauMomentum: ResolvedMomentum
 ): SignalRuleTrace {
+  const buyThresholds = resolveBuyThresholds(input.productCode);
   const hasXauMomentum = xauMomentum.value !== null;
   const spreadAcceptable = isSpreadAcceptableForBuy(input);
-  const xauMomentumAcceptable = isXauMomentumAcceptableForBuy(xauMomentum);
+  const premiumAbsoluteAcceptable = isPremiumAbsoluteAcceptableForBuy(input, buyThresholds);
+  const xauMomentumAcceptable = isXauMomentumAcceptableForBuy(xauMomentum, buyThresholds);
   const conditions: SignalConditionCheck[] = [
     {
       label: "Lịch sử premium",
@@ -266,8 +301,16 @@ function evaluateBuyDcaRule(
     {
       label: "Premium percentile (lịch sử hiện có)",
       actual: formatPercentileActual(premiumHistory),
-      requirement: `< ${formatPercentile(VN_THRESHOLDS.premiumPercentileBuy)}`,
-      passed: premiumHistory.usable && premiumPercentile < VN_THRESHOLDS.premiumPercentileBuy
+      requirement: `≤ ${formatPercentile(buyThresholds.premiumPercentileBuy)}`,
+      passed: premiumHistory.usable && premiumPercentile <= buyThresholds.premiumPercentileBuy
+    },
+    {
+      label: "Premium bán tuyệt đối",
+      actual: formatPercent(input.premiumSellPct),
+      requirement: Number.isFinite(buyThresholds.premiumBuyAbsolute)
+        ? `≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}`
+        : "Không áp dụng",
+      passed: premiumAbsoluteAcceptable
     },
     {
       label: "Spread (mua–bán)",
@@ -278,7 +321,7 @@ function evaluateBuyDcaRule(
     {
       label: formatXauMomentumLabel(xauMomentum.days, "không giảm mạnh"),
       actual: hasXauMomentum ? formatPercent(xauMomentum.value!) : "Không có",
-      requirement: `≥ ${formatPercent(VN_THRESHOLDS.xauMomentumBuyFloor)}`,
+      requirement: `≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}`,
       passed: xauMomentumAcceptable
     }
   ];
@@ -289,7 +332,7 @@ function evaluateBuyDcaRule(
         65 +
           Math.min(
             15,
-            (VN_THRESHOLDS.premiumPercentileBuy - premiumPercentile) / 3
+            (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2
           )
       )
     : null;
@@ -301,7 +344,7 @@ function evaluateBuyDcaRule(
     matched,
     score,
     scoreFormula: matched
-      ? `Điểm = round(65 + min(15, (${VN_THRESHOLDS.premiumPercentileBuy} − ${formatPercentile(premiumPercentile)}) / 3)) = ${score}`
+      ? `Điểm = round(65 + min(15, (${buyThresholds.premiumPercentileBuy} − ${formatPercentile(premiumPercentile)}) / 2)) = ${score}`
       : null,
     conditions
   };
@@ -398,6 +441,7 @@ function buildHoldScore(
   domesticMomentum7d: ResolvedMomentum
 ): number {
   let score = 50;
+  const buyThresholds = resolveBuyThresholds(input.productCode);
 
   if (premiumHistory.usable) {
     score += Math.min(12, (50 - premiumPercentile) * 0.24);
@@ -408,7 +452,7 @@ function buildHoldScore(
 
   if (xauMomentum.value !== null) {
     if (xauMomentum.value >= 0.01) score += 3;
-    else if (xauMomentum.value < VN_THRESHOLDS.xauMomentumBuyFloor) score -= 5;
+    else if (xauMomentum.value < buyThresholds.xauMomentumBuyFloor) score -= 5;
   }
 
   if (
@@ -428,15 +472,20 @@ function buildHoldReasons(
   xauMomentum: ResolvedMomentum,
   score: number
 ): string[] {
+  const buyThresholds = resolveBuyThresholds(input.productCode);
+
   if (
     premiumHistory.usable &&
-    premiumPercentile < VN_THRESHOLDS.premiumPercentileBuy &&
+    premiumPercentile <= buyThresholds.premiumPercentileBuy &&
+    isPremiumAbsoluteAcceptableForBuy(input, buyThresholds) &&
     isSpreadAcceptableForBuy(input) &&
     xauMomentum.value !== null &&
-    xauMomentum.value < VN_THRESHOLDS.xauMomentumBuyFloor
+    xauMomentum.value < buyThresholds.xauMomentumBuyFloor
   ) {
     return [
-      "Premium đang hấp dẫn so với lịch sử, nhưng vàng thế giới giảm mạnh hơn −3%.",
+      `Premium đang hấp dẫn so với lịch sử, nhưng vàng thế giới giảm mạnh hơn ${formatPercent(
+        buyThresholds.xauMomentumBuyFloor
+      )}.`,
       "Phù hợp chia nhỏ lệnh mua nếu mua dài hạn; chưa nên mua gấp."
     ];
   }
@@ -555,6 +604,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
     xauMomentum
   );
   if (buyDcaRule.matched) {
+    const buyThresholds = resolveBuyThresholds(input.productCode);
     const momentumDays = xauMomentum.days ?? 30;
     return {
       output: {
@@ -563,8 +613,11 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
         confidence,
         reasons: [
           "Premium đang thấp hơn nhiều giai đoạn trong lịch sử — vùng hấp dẫn cho tích sản.",
+          Number.isFinite(buyThresholds.premiumBuyAbsolute)
+            ? `Premium bán ≤ ${formatPercent(buyThresholds.premiumBuyAbsolute)}.`
+            : "Premium bán không bị chặn bởi ngưỡng tuyệt đối.",
           `Spread mua–bán ≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)} (bình thường thị trường VN).`,
-          `Vàng thế giới ${momentumDays} ngày chưa giảm mạnh (≥ ${formatPercent(VN_THRESHOLDS.xauMomentumBuyFloor)}).`
+          `Vàng thế giới ${momentumDays} ngày chưa giảm mạnh (≥ ${formatPercent(buyThresholds.xauMomentumBuyFloor)}).`
         ]
       },
       matchedRuleId: buyDcaRule.id,
