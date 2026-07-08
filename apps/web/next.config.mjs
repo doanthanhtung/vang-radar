@@ -11,6 +11,14 @@ const nextConfig = {
 
     return [
       {
+        source: "/stack",
+        destination: "/stack/index.html"
+      },
+      {
+        source: "/stack/",
+        destination: "/stack/index.html"
+      },
+      {
         source: "/api/v1/:path*",
         destination: `${apiProxyTarget}/:path*`
       },

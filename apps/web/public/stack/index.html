@@ -1,0 +1,2581 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stack (Ngăn xếp) — Bài giảng Cấu trúc Dữ liệu</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy: #1428a0;
+      --navy-deep: #0a1654;
+      --ice: #c8d4f0;
+      --teal: #1428a0;
+      --teal-bright: #3b5bdb;
+      --mint: #5eead4;
+      --dark: #21295c;
+      --slate: #64748b;
+      --bg: #f8fafc;
+      --amber: #f59e0b;
+      --amber-bg: #fffbeb;
+      --amber-text: #92400e;
+      --light-teal: #e0f2f1;
+      --code-bg: #1e293b;
+      --white: #ffffff;
+      --ease: cubic-bezier(0.32, 0.72, 0, 1);
+      --slide-pad: clamp(2rem, 5vw, 4rem);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      background: var(--navy-deep);
+      color: var(--dark);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Deck shell ── */
+    .deck {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .progress {
+      position: fixed;
+      top: 0; left: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--teal), var(--teal-bright));
+      z-index: 100;
+      transition: width 0.6s var(--ease);
+    }
+
+    /* ── Slides ── */
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding: var(--slide-pad);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(40px);
+      transition: opacity 0.7s var(--ease), transform 0.7s var(--ease), visibility 0.7s;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(0);
+    }
+
+    .slide.slide--exit-forward {
+      opacity: 0;
+      transform: translateX(-40px);
+    }
+
+    .slide.slide--exit-backward {
+      opacity: 0;
+      transform: translateX(40px);
+    }
+
+    /* Light slides */
+    .slide--light {
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 60% at 100% 0%, rgba(2,128,144,0.06) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 0% 100%, rgba(30,39,97,0.04) 0%, transparent 60%);
+    }
+
+    /* Dark slides */
+    .slide--dark {
+      background: var(--navy-deep);
+      background-image:
+        radial-gradient(ellipse 70% 50% at 80% 20%, rgba(2,195,154,0.12) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 40% at 10% 80%, rgba(202,220,252,0.06) 0%, transparent 50%);
+      color: var(--white);
+    }
+
+    /* ── Header bar ── */
+    .slide-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: clamp(1.5rem, 3vh, 2.5rem);
+      flex-shrink: 0;
+    }
+
+    .slide-header__accent {
+      width: 4px;
+      min-height: 100%;
+      align-self: stretch;
+      background: linear-gradient(180deg, var(--teal), var(--teal-bright));
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .slide-header__text { flex: 1; }
+
+    .slide-header__icon {
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .slide-header h2 {
+      font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--navy);
+      line-height: 1.15;
+    }
+
+    .slide--dark .slide-header h2 { color: var(--white); }
+
+    .slide-header p {
+      margin-top: 0.4rem;
+      font-size: clamp(0.85rem, 1.5vw, 1rem);
+      color: var(--slate);
+      font-weight: 500;
+    }
+
+    .slide--dark .slide-header p { color: var(--ice); opacity: 0.8; }
+
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .slide-body--scroll {
+      overflow-y: auto;
+      padding-right: 0.25rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--teal) transparent;
+    }
+
+    .slide--compact .slide-header { margin-bottom: 1rem; }
+
+    /* ── Title slide ── */
+    .title-slide {
+      justify-content: center;
+      align-items: flex-start;
+      padding-left: clamp(2.5rem, 8vw, 6rem);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      background: rgba(2,128,144,0.2);
+      border: 1px solid rgba(2,195,154,0.3);
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--mint);
+      margin-bottom: 1.5rem;
+    }
+
+    .title-slide h1 {
+      font-size: clamp(3rem, 8vw, 5.5rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      background: linear-gradient(135deg, var(--white) 0%, var(--ice) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 1rem;
+    }
+
+    .title-slide .subtitle {
+      font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+      color: var(--ice);
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .title-slide .desc {
+      font-size: clamp(0.9rem, 1.5vw, 1.1rem);
+      color: var(--slate);
+      max-width: 36rem;
+      line-height: 1.6;
+    }
+
+    .title-glow {
+      position: absolute;
+      right: -10%;
+      top: 10%;
+      width: 50vw;
+      height: 50vw;
+      max-width: 600px;
+      max-height: 600px;
+      background: radial-gradient(circle, rgba(2,128,144,0.15) 0%, transparent 70%);
+      pointer-events: none;
+      border-radius: 50%;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--white);
+      border-radius: 1.25rem;
+      padding: clamp(1.25rem, 2.5vw, 2rem);
+      box-shadow:
+        0 1px 2px rgba(30,39,97,0.04),
+        0 8px 32px rgba(30,39,97,0.06);
+      border: 1px solid rgba(202,220,252,0.6);
+    }
+
+    .card--glass {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: none;
+      color: var(--white);
+    }
+
+    /* ── Goal list ── */
+    .goal-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .goal-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      font-size: clamp(0.95rem, 1.8vw, 1.15rem);
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .goal-num {
+      flex-shrink: 0;
+      width: 2.25rem;
+      height: 2.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--teal), var(--teal-bright));
+      color: var(--white);
+      font-weight: 700;
+      font-size: 0.9rem;
+      border-radius: 50%;
+    }
+
+    /* ── Two-column layout ── */
+    .cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(1rem, 2vw, 1.75rem);
+      flex: 1;
+      min-height: 0;
+    }
+
+    @media (max-width: 768px) {
+      .cols { grid-template-columns: 1fr; }
+    }
+
+    .section-label {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 0.75rem;
+    }
+
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .bullet-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      font-size: clamp(0.85rem, 1.4vw, 0.95rem);
+      line-height: 1.55;
+      color: var(--dark);
+    }
+
+    .bullet-list li::before {
+      content: "";
+      flex-shrink: 0;
+      width: 6px;
+      height: 6px;
+      margin-top: 0.55em;
+      background: var(--teal);
+      border-radius: 50%;
+    }
+
+    /* ── Example cards ── */
+    .example-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .example-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.9rem 1.1rem;
+      background: var(--light-teal);
+      border-radius: 0.875rem;
+      transition: transform 0.4s var(--ease);
+    }
+
+    .example-item:hover { transform: translateX(4px); }
+
+    .example-item .icon { font-size: 1.5rem; flex-shrink: 0; }
+
+    .example-item strong {
+      display: block;
+      font-size: 0.95rem;
+      color: var(--navy);
+      font-weight: 700;
+    }
+
+    .example-item span {
+      font-size: 0.8rem;
+      color: var(--slate);
+    }
+
+    /* ── Diagram steps ── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: clamp(0.75rem, 1.5vw, 1.25rem);
+      flex: 1;
+      align-items: stretch;
+    }
+
+    @media (max-width: 900px) {
+      .steps { grid-template-columns: 1fr; }
+    }
+
+    .step-card {
+      display: flex;
+      flex-direction: column;
+      background: var(--white);
+      border-radius: 1.25rem;
+      border: 1px solid rgba(202,220,252,0.6);
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(30,39,97,0.06);
+    }
+
+    .step-card__head {
+      padding: 1rem 1.25rem 0.75rem;
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--navy);
+    }
+
+    .step-card__code {
+      margin: 0 1rem;
+      padding: 1.25rem;
+      background: var(--code-bg);
+      border-radius: 0.75rem;
+      border: 1px solid rgba(2,128,144,0.4);
+      flex: 1;
+    }
+
+    .step-card__code pre {
+      font-family: "JetBrains Mono", monospace;
+      font-size: clamp(0.65rem, 1.2vw, 0.8rem);
+      line-height: 1.55;
+      color: var(--mint);
+      white-space: pre;
+      overflow-x: auto;
+    }
+
+    .step-card__note {
+      padding: 1rem 1.25rem;
+      font-size: 0.8rem;
+      color: var(--slate);
+      line-height: 1.5;
+    }
+
+    .step-arrow {
+      display: none;
+    }
+
+    @media (min-width: 901px) {
+      .steps { position: relative; }
+    }
+
+    /* ── Table ── */
+    .table-wrap {
+      overflow: hidden;
+      border-radius: 1rem;
+      border: 1px solid rgba(202,220,252,0.6);
+      box-shadow: 0 8px 32px rgba(30,39,97,0.06);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: clamp(0.8rem, 1.3vw, 0.9rem);
+    }
+
+    thead th {
+      background: var(--navy);
+      color: var(--white);
+      padding: 0.9rem 1.1rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8rem;
+      letter-spacing: 0.02em;
+    }
+
+    thead th:last-child { text-align: center; }
+
+    tbody tr:nth-child(even) { background: var(--light-teal); }
+    tbody tr:nth-child(odd) { background: var(--white); }
+
+    tbody td {
+      padding: 0.75rem 1.1rem;
+      border-bottom: 1px solid rgba(202,220,252,0.3);
+      vertical-align: middle;
+    }
+
+    tbody td:first-child {
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 600;
+      color: var(--navy);
+      font-size: 0.82rem;
+    }
+
+    tbody td:nth-child(3) {
+      text-align: center;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 600;
+      color: var(--teal);
+    }
+
+    .callout {
+      margin-top: 1.25rem;
+      padding: 1.25rem 1.5rem;
+      background: var(--light-teal);
+      border-radius: 1rem;
+      border-left: 4px solid var(--teal);
+    }
+
+    .callout strong {
+      display: block;
+      font-size: 0.95rem;
+      color: var(--navy);
+      margin-bottom: 0.5rem;
+    }
+
+    .callout ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .callout li {
+      font-size: 0.85rem;
+      color: var(--dark);
+      padding-left: 1rem;
+      position: relative;
+    }
+
+    .callout li::before {
+      content: "▸";
+      position: absolute;
+      left: 0;
+      color: var(--teal);
+      font-size: 0.75rem;
+    }
+
+    /* ── Implementation compare ── */
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(1rem, 2vw, 1.75rem);
+      flex: 1;
+    }
+
+    @media (max-width: 768px) {
+      .compare { grid-template-columns: 1fr; }
+    }
+
+    .compare-card h3 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .pros-label, .cons-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      margin-top: 0.75rem;
+    }
+
+    .pros-label { color: var(--teal); }
+    .cons-label { color: #dc2626; }
+
+    .compare-card .bullet-list li { font-size: 0.82rem; }
+
+    .use-tag {
+      margin-top: 1rem;
+      padding: 0.65rem 1rem;
+      background: var(--light-teal);
+      border-radius: 0.75rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--navy);
+    }
+
+    /* ── Applications ── */
+    .app-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      flex: 1;
+    }
+
+    @media (max-width: 768px) {
+      .app-grid { grid-template-columns: 1fr; }
+    }
+
+    .app-card {
+      padding: 1.25rem;
+      background: var(--white);
+      border-radius: 1rem;
+      border: 1px solid rgba(202,220,252,0.6);
+      box-shadow: 0 4px 20px rgba(20,40,160,0.05);
+      transition: transform 0.3s var(--ease);
+    }
+
+    .app-card:hover { transform: translateY(-3px); }
+
+    .app-card__icon { font-size: 1.75rem; margin-bottom: 0.5rem; }
+
+    .app-card h4 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 0.4rem;
+    }
+
+    .app-card p {
+      font-size: 0.82rem;
+      color: var(--slate);
+      line-height: 1.55;
+    }
+
+    /* ── Summary ── */
+    .summary-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      max-width: 52rem;
+    }
+
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: rgba(2,94,107,0.5);
+      border-radius: 0.875rem;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: clamp(0.95rem, 1.6vw, 1.1rem);
+      line-height: 1.5;
+      transition: transform 0.4s var(--ease);
+    }
+
+    .summary-item:nth-child(even) {
+      background: rgba(30,58,95,0.6);
+    }
+
+    .summary-item:hover { transform: translateX(6px); }
+
+    .summary-item.highlight {
+      background: rgba(2,128,144,0.35);
+      border-color: rgba(94,234,212,0.3);
+      font-weight: 700;
+      color: var(--mint);
+    }
+
+    .check {
+      flex-shrink: 0;
+      width: 1.75rem;
+      height: 1.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--teal), var(--teal-bright));
+      border-radius: 50%;
+      font-size: 0.75rem;
+      color: var(--white);
+      font-weight: 700;
+    }
+
+    .qa-pill {
+      display: inline-flex;
+      margin-top: 2rem;
+      padding: 0.65rem 1.5rem;
+      background: linear-gradient(135deg, var(--teal), var(--teal-bright));
+      border-radius: 999px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--white);
+    }
+
+    /* ── Navigation ── */
+    .nav {
+      position: fixed;
+      bottom: clamp(1rem, 3vh, 2rem);
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      background: rgba(15,21,53,0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 999px;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      width: 2.5rem;
+      height: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 50%;
+      color: var(--ice);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.3s var(--ease), transform 0.2s var(--ease);
+      user-select: none;
+    }
+
+    .nav-btn:hover {
+      background: rgba(2,128,144,0.4);
+      color: var(--white);
+    }
+
+    .nav-btn:active { transform: scale(0.94); }
+
+    .nav-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .nav-dots {
+      display: flex;
+      gap: 0.4rem;
+      padding: 0 0.25rem;
+    }
+
+    .nav-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s var(--ease), transform 0.3s var(--ease);
+      padding: 0;
+    }
+
+    .nav-dot.active {
+      background: var(--teal-bright);
+      transform: scale(1.3);
+    }
+
+    .nav-dot:hover:not(.active) {
+      background: rgba(255,255,255,0.4);
+    }
+
+    .slide-counter {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.7rem;
+      color: var(--slate);
+      min-width: 3rem;
+      text-align: center;
+    }
+
+    .footer-tag {
+      position: fixed;
+      bottom: clamp(1rem, 3vh, 2rem);
+      left: clamp(1rem, 3vw, 2rem);
+      font-size: 0.65rem;
+      color: rgba(100,116,139,0.7);
+      letter-spacing: 0.03em;
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .slide--dark .footer-tag { color: rgba(202,220,252,0.4); }
+
+    /* Keyboard hint */
+    .key-hint {
+      position: fixed;
+      bottom: clamp(1rem, 3vh, 2rem);
+      right: clamp(1rem, 3vw, 2rem);
+      font-size: 0.65rem;
+      color: rgba(100,116,139,0.5);
+      z-index: 50;
+      pointer-events: none;
+    }
+
+    .slide--dark ~ .key-hint,
+    body:has(.slide--dark.active) .key-hint {
+      color: rgba(202,220,252,0.35);
+    }
+
+    kbd {
+      display: inline-block;
+      padding: 0.1rem 0.35rem;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 4px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.6rem;
+    }
+
+    /* Stagger animation on active slide */
+    .slide.active .stagger > * {
+      animation: fadeUp 0.6s var(--ease) both;
+    }
+
+    .slide.active .stagger > *:nth-child(1) { animation-delay: 0.05s; }
+    .slide.active .stagger > *:nth-child(2) { animation-delay: 0.12s; }
+    .slide.active .stagger > *:nth-child(3) { animation-delay: 0.19s; }
+    .slide.active .stagger > *:nth-child(4) { animation-delay: 0.26s; }
+    .slide.active .stagger > *:nth-child(5) { animation-delay: 0.33s; }
+    .slide.active .stagger > *:nth-child(6) { animation-delay: 0.40s; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Code blocks ── */
+    .code-panel {
+      background: var(--code-bg);
+      border-radius: 0.875rem;
+      border: 1px solid rgba(20,40,160,0.35);
+      overflow: hidden;
+    }
+
+    .code-panel__bar {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.85rem;
+      background: rgba(0,0,0,0.25);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .code-panel__dot {
+      width: 9px; height: 9px; border-radius: 50%;
+    }
+    .code-panel__dot:nth-child(1) { background: #ff5f57; }
+    .code-panel__dot:nth-child(2) { background: #febc2e; }
+    .code-panel__dot:nth-child(3) { background: #28c840; }
+
+    .code-panel__lang {
+      margin-left: auto;
+      font-size: 0.65rem;
+      color: rgba(255,255,255,0.4);
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .code-panel pre {
+      padding: 1rem 1.1rem;
+      font-family: "JetBrains Mono", monospace;
+      font-size: clamp(0.62rem, 1.1vw, 0.78rem);
+      line-height: 1.6;
+      color: var(--mint);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .kw { color: #c792ea; }
+    .ty { color: #82aaff; }
+    .fn { color: #ffcb6b; }
+    .cm { color: #546e7a; font-style: italic; }
+    .num { color: #f78c6c; }
+
+    /* ── Pattern cards ── */
+    .pattern-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+
+    @media (max-width: 900px) {
+      .pattern-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .pattern-card {
+      padding: 1rem;
+      background: var(--white);
+      border-radius: 0.875rem;
+      border: 1px solid rgba(202,220,252,0.6);
+      box-shadow: 0 4px 16px rgba(20,40,160,0.04);
+    }
+
+    .pattern-card__icon { font-size: 1.4rem; margin-bottom: 0.35rem; }
+
+    .pattern-card h4 {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 0.3rem;
+    }
+
+    .pattern-card p {
+      font-size: 0.75rem;
+      color: var(--slate);
+      line-height: 1.45;
+    }
+
+    .pattern-card .examples {
+      margin-top: 0.5rem;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.68rem;
+      color: var(--teal);
+    }
+
+    /* ── Exercise cards ── */
+    .exercise-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .exercise {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.85rem;
+      padding: 0.9rem 1rem;
+      background: var(--white);
+      border-radius: 0.875rem;
+      border: 1px solid rgba(202,220,252,0.6);
+    }
+
+    .exercise:nth-child(even) { background: var(--light-teal); }
+
+    .level {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      transform: rotate(180deg);
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.4rem 0.2rem;
+      border-radius: 0.5rem;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+    }
+
+    .level--basic { background: #dcfce7; color: #166534; }
+    .level--mid { background: #fef3c7; color: #92400e; }
+    .level--adv { background: #fee2e2; color: #991b1b; }
+
+    .exercise h4 {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--navy);
+      margin-bottom: 0.3rem;
+    }
+
+    .exercise .idea {
+      font-size: 0.78rem;
+      color: var(--dark);
+      line-height: 1.5;
+      margin-bottom: 0.35rem;
+    }
+
+    .exercise .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      font-size: 0.7rem;
+    }
+
+    .meta-tag {
+      padding: 0.15rem 0.5rem;
+      background: rgba(20,40,160,0.08);
+      border-radius: 999px;
+      color: var(--navy);
+      font-weight: 600;
+    }
+
+    .meta-tag time { font-family: "JetBrains Mono", monospace; color: var(--teal); }
+
+    .exercise--expandable {
+      transition: border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+    }
+
+    .exercise--expandable:hover {
+      border-color: rgba(20,40,160,0.35);
+    }
+
+    .exercise--expandable.expanded {
+      border-color: var(--teal);
+      box-shadow: 0 4px 20px rgba(20,40,160,0.1);
+    }
+
+    .exercise__head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+      width: 100%;
+      background: none;
+      border: none;
+      padding: 0;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+    }
+
+    .exercise__head:hover h4 { color: var(--teal-bright); }
+
+    .exercise__head-text { flex: 1; min-width: 0; }
+
+    .expand-hint {
+      display: block;
+      font-size: 0.65rem;
+      color: var(--slate);
+      font-weight: 500;
+      margin-top: 0.15rem;
+      font-family: "Plus Jakarta Sans", sans-serif;
+    }
+
+    .expand-icon {
+      flex-shrink: 0;
+      width: 1.5rem;
+      height: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(20,40,160,0.08);
+      border-radius: 50%;
+      font-size: 0.55rem;
+      color: var(--navy);
+      transition: transform 0.4s var(--ease), background 0.3s;
+      margin-top: 0.1rem;
+    }
+
+    .exercise--expandable.expanded .expand-icon {
+      transform: rotate(180deg);
+      background: var(--teal);
+      color: var(--white);
+    }
+
+    .exercise__detail {
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: max-height 0.55s var(--ease), opacity 0.4s var(--ease), margin 0.4s;
+      margin-top: 0;
+    }
+
+    .exercise--expandable.expanded .exercise__detail {
+      max-height: 1100px;
+      opacity: 1;
+      margin-top: 0.75rem;
+    }
+
+    .detail-block {
+      padding: 0.85rem 1rem;
+      background: rgba(20,40,160,0.04);
+      border-radius: 0.65rem;
+      border: 1px solid rgba(202,220,252,0.5);
+    }
+
+    .detail-block + .detail-block { margin-top: 0.5rem; }
+
+    .detail-block strong {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--navy);
+      margin-bottom: 0.35rem;
+    }
+
+    .detail-block p,
+    .detail-block li {
+      font-size: 0.72rem;
+      color: var(--dark);
+      line-height: 1.5;
+    }
+
+    .detail-block ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .detail-block li::before {
+      content: "▸ ";
+      color: var(--teal);
+      font-size: 0.65rem;
+    }
+
+    .detail-viz {
+      margin-top: 0.4rem;
+      padding: 0.55rem 0.75rem;
+      background: var(--code-bg);
+      border-radius: 0.45rem;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.65rem;
+      line-height: 1.45;
+      color: var(--mint);
+      white-space: pre-wrap;
+    }
+
+    /* ── Step demo ── */
+    .step-demo {
+      margin-top: 0.5rem;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, rgba(20,40,160,0.06), rgba(59,91,219,0.04));
+      border-radius: 0.75rem;
+      border: 1px solid rgba(20,40,160,0.15);
+    }
+
+    .step-demo__toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .step-demo__counter {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--navy);
+      padding: 0.25rem 0.6rem;
+      background: var(--white);
+      border-radius: 999px;
+    }
+
+    .step-demo__controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+    }
+
+    .demo-btn {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      font-family: "Plus Jakarta Sans", sans-serif;
+      border: 1px solid rgba(20,40,160,0.2);
+      border-radius: 0.45rem;
+      background: var(--white);
+      color: var(--navy);
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .demo-btn:hover:not(:disabled) {
+      background: var(--light-teal);
+    }
+
+    .demo-btn:active:not(:disabled) { transform: scale(0.97); }
+
+    .demo-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .demo-btn--primary {
+      background: var(--teal);
+      color: var(--white);
+      border-color: var(--teal);
+    }
+
+    .demo-btn--primary:hover:not(:disabled) {
+      background: var(--teal-bright);
+    }
+
+    .demo-btn.playing {
+      background: var(--amber);
+      border-color: var(--amber);
+      color: var(--white);
+    }
+
+    .step-demo__action {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--dark);
+      margin-bottom: 0.55rem;
+      padding: 0.5rem 0.65rem;
+      background: var(--white);
+      border-radius: 0.5rem;
+      border-left: 3px solid var(--teal);
+      line-height: 1.45;
+    }
+
+    .step-demo__viz {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.65rem;
+    }
+
+    @media (max-width: 700px) {
+      .step-demo__viz { grid-template-columns: 1fr; }
+    }
+
+    .step-demo__panel {
+      padding: 0.65rem 0.75rem;
+      background: var(--code-bg);
+      border-radius: 0.5rem;
+      border: 1px solid rgba(59,91,219,0.3);
+    }
+
+    .step-demo__panel-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(255,255,255,0.45);
+      margin-bottom: 0.4rem;
+    }
+
+    .step-demo__panel pre {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.68rem;
+      line-height: 1.55;
+      color: var(--mint);
+      white-space: pre-wrap;
+      margin: 0;
+    }
+
+    .step-demo__input {
+      grid-column: 1 / -1;
+      padding: 0.55rem 0.75rem;
+      background: var(--white);
+      border-radius: 0.5rem;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.08em;
+      text-align: center;
+    }
+
+    .step-demo__input .ch {
+      display: inline-block;
+      padding: 0.1rem 0.2rem;
+      border-radius: 4px;
+      color: var(--slate);
+      transition: background 0.25s, color 0.25s;
+    }
+
+    .step-demo__input .ch--current {
+      background: var(--teal);
+      color: var(--white);
+      font-weight: 700;
+    }
+
+    .step-demo__input .ch--done {
+      color: var(--teal);
+      opacity: 0.55;
+    }
+
+    .step-demo__result {
+      grid-column: 1 / -1;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #166534;
+      text-align: center;
+      padding: 0.4rem;
+      background: #dcfce7;
+      border-radius: 0.45rem;
+    }
+
+    .step-demo__result.fail {
+      color: #991b1b;
+      background: #fee2e2;
+    }
+
+    /* ── Checklist ── */
+    .checklist {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    @media (max-width: 768px) {
+      .checklist { grid-template-columns: 1fr; }
+    }
+
+    .check-item {
+      display: flex;
+      gap: 0.6rem;
+      padding: 0.75rem 1rem;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 0.75rem;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      color: var(--ice);
+    }
+
+    .check-item .num {
+      flex-shrink: 0;
+      width: 1.4rem;
+      height: 1.4rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--teal-bright);
+      border-radius: 50%;
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--white);
+    }
+
+    .nav-dots { max-width: 280px; flex-wrap: wrap; justify-content: center; }
+    .nav-dot { width: 6px; height: 6px; }
+
+    /* ── Implement side-by-side ── */
+    .impl-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      flex: 1;
+      min-height: 0;
+    }
+
+    @media (max-width: 900px) {
+      .impl-grid { grid-template-columns: 1fr; }
+    }
+
+    .impl-col h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 0.6rem;
+    }
+
+    .impl-col .code-panel pre {
+      font-size: clamp(0.68rem, 1.15vw, 0.8rem);
+      line-height: 1.55;
+    }
+
+    .impl-notes {
+      margin-top: 0.65rem;
+      font-size: 0.72rem;
+      color: var(--slate);
+      line-height: 1.45;
+    }
+
+    .impl-notes .pro { color: #166534; }
+    .impl-notes .con { color: #991b1b; }
+
+    /* ── Real-world example flows ── */
+    .example-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+
+    .flow-step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.85rem;
+      align-items: start;
+      padding: 0.75rem 1rem;
+      background: var(--white);
+      border-radius: 0.75rem;
+      border: 1px solid rgba(202,220,252,0.6);
+    }
+
+    .flow-step:nth-child(even) { background: var(--light-teal); }
+
+    .flow-step__num {
+      width: 1.6rem;
+      height: 1.6rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--teal), var(--teal-bright));
+      color: var(--white);
+      font-size: 0.7rem;
+      font-weight: 700;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .flow-step strong {
+      display: block;
+      font-size: 0.82rem;
+      color: var(--navy);
+      margin-bottom: 0.2rem;
+    }
+
+    .flow-step p {
+      font-size: 0.76rem;
+      color: var(--slate);
+      line-height: 1.45;
+    }
+
+    .flow-step code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.72rem;
+      color: var(--navy);
+      background: rgba(20,40,160,0.06);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+    }
+
+    .stack-viz {
+      margin-top: 0.5rem;
+      padding: 0.65rem 0.85rem;
+      background: var(--code-bg);
+      border-radius: 0.5rem;
+      border: 1px solid rgba(20,40,160,0.35);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.68rem;
+      line-height: 1.5;
+      color: var(--mint);
+      white-space: pre;
+    }
+
+    .realworld-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      flex: 1;
+      min-height: 0;
+    }
+
+    @media (max-width: 900px) {
+      .realworld-cols { grid-template-columns: 1fr; }
+    }
+
+    .context-box {
+      padding: 0.85rem 1rem;
+      background: rgba(20,40,160,0.06);
+      border-radius: 0.75rem;
+      border-left: 3px solid var(--teal);
+      margin-bottom: 0.75rem;
+    }
+
+    .context-box p {
+      font-size: 0.78rem;
+      color: var(--dark);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="deck" id="deck">
+    <div class="progress" id="progress"></div>
+
+    <!-- SLIDE 1: Title -->
+    <section class="slide slide--dark active" data-index="0">
+      <div class="title-glow"></div>
+      <div class="title-slide stagger">
+        <div class="eyebrow">Samsung · Chương trình Thực tập</div>
+        <h1>Stack<br><span style="font-size:0.55em;font-weight:600;opacity:0.85">(Ngăn xếp)</span></h1>
+        <p class="subtitle">📚 Nguyên lý LIFO — Last In, First Out</p>
+        <p class="desc">Phần tử vào cuối được lấy ra trước · Cấu trúc dữ liệu nền tảng trong lập trình hệ thống</p>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 2: Goals -->
+    <section class="slide slide--light" data-index="1">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>🎯 Mục tiêu bài học</h2>
+          <p>Sau bài học, sinh viên sẽ:</p>
+        </div>
+      </div>
+      <div class="slide-body">
+        <div class="card stagger" style="flex:1">
+          <ul class="goal-list">
+            <li><span class="goal-num">1</span> Hiểu nguyên lý LIFO và mô hình hoạt động Top / Bottom</li>
+            <li><span class="goal-num">2</span> Implement Stack bằng Array và Linked List (C++)</li>
+            <li><span class="goal-num">3</span> Phân tích độ phức tạp &amp; xử lý edge case (underflow, overflow)</li>
+            <li><span class="goal-num">4</span> Nhận diện các pattern bài toán cần dùng Stack</li>
+            <li><span class="goal-num">5</span> Giải được các bài tập ứng dụng từ cơ bản đến nâng cao</li>
+            <li><span class="goal-num">6</span> Liên hệ Stack với hệ thống thực tế (runtime, parser, Android)</li>
+          </ul>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 3: Core -->
+    <section class="slide slide--light" data-index="2">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>💡 Ý tưởng cốt lõi</h2>
+          <p>Stack là gì? Vì sao cần Stack?</p>
+        </div>
+      </div>
+      <div class="slide-body cols stagger">
+        <div class="card">
+          <div class="section-label">Stack là gì?</div>
+          <ul class="bullet-list">
+            <li>Cấu trúc dữ liệu tuyến tính (linear data structure)</li>
+            <li>Chỉ cho phép thao tác tại một đầu — gọi là <strong>Top</strong></li>
+            <li>Hoạt động theo nguyên lý <strong>LIFO</strong>: Last In, First Out</li>
+          </ul>
+          <div class="section-label" style="margin-top:1.25rem">Vì sao cần Stack?</div>
+          <ul class="bullet-list">
+            <li>Xử lý tuần tự theo thứ tự ngược (reverse order)</li>
+            <li>Quản lý ngữ cảnh gần nhất (most recent context)</li>
+            <li>Theo dõi trạng thái lồng nhau (nested state)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="section-label">📌 Ví dụ thực tế</div>
+          <div class="example-grid">
+            <div class="example-item">
+              <span class="icon">🍽️</span>
+              <div><strong>Chồng đĩa</strong><span>Lấy đĩa trên cùng trước</span></div>
+            </div>
+            <div class="example-item">
+              <span class="icon">↩️</span>
+              <div><strong>Undo / Redo</strong><span>Hoàn tác thao tác gần nhất</span></div>
+            </div>
+            <div class="example-item">
+              <span class="icon">🌐</span>
+              <div><strong>Nút Back</strong><span>Quay lại trang truy cập trước</span></div>
+            </div>
+            <div class="example-item">
+              <span class="icon">📞</span>
+              <div><strong>Call Stack</strong><span>Quản lý lời gọi hàm lồng nhau</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 4: Diagram -->
+    <section class="slide slide--light" data-index="3">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>📊 Minh họa Push / Pop</h2>
+          <p>Quan sát thay đổi Top khi thêm và xóa phần tử</p>
+        </div>
+      </div>
+      <div class="slide-body">
+        <div class="steps stagger">
+          <div class="step-card">
+            <div class="step-card__head">Bước 1: Push(10)</div>
+            <div class="step-card__code"><pre>Push(10)
+
++------+
+|  10  |  ← Top
++------+</pre></div>
+            <div class="step-card__note">Thêm 10 vào Stack rỗng. Top trỏ tới 10.</div>
+          </div>
+          <div class="step-card">
+            <div class="step-card__head">Bước 2: Push(20)</div>
+            <div class="step-card__code"><pre>Push(20)
+
++------+
+|  20  |  ← Top
++------+
+|  10  |
++------+</pre></div>
+            <div class="step-card__note">Thêm 20 lên trên 10. 20 trở thành Top mới.</div>
+          </div>
+          <div class="step-card">
+            <div class="step-card__head">Bước 3: Pop() → 20</div>
+            <div class="step-card__code"><pre>Pop()
+
++------+
+|  10  |  ← Top
++------+
+
+Trả về: 20</pre></div>
+            <div class="step-card__note">Lấy ra phần tử Top (20). 10 lại là Top.</div>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 5: Operations -->
+    <section class="slide slide--light" data-index="4">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>⚡ Các thao tác cơ bản</h2>
+          <p>Mọi thao tác chính đều có độ phức tạp O(1)</p>
+        </div>
+      </div>
+      <div class="slide-body stagger">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Thao tác</th>
+                <th>Ý nghĩa</th>
+                <th>Độ phức tạp</th>
+                <th>Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>push(x)</td><td>Thêm phần tử x vào Top</td><td>O(1)</td><td>Tăng kích thước Stack</td></tr>
+              <tr><td>pop()</td><td>Xóa &amp; trả phần tử Top</td><td>O(1)</td><td>Lỗi nếu Stack rỗng</td></tr>
+              <tr><td>top() / peek()</td><td>Xem phần tử Top, không xóa</td><td>O(1)</td><td>Không thay đổi Stack</td></tr>
+              <tr><td>isEmpty()</td><td>Kiểm tra Stack có rỗng</td><td>O(1)</td><td>Trả về true / false</td></tr>
+              <tr><td>size()</td><td>Trả số phần tử hiện tại</td><td>O(1)</td><td>Đếm phần tử trong Stack</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>💡 Lưu ý quan trọng</strong>
+          <ul>
+            <li>pop() và top() trên Stack rỗng → Stack Underflow (lỗi runtime)</li>
+            <li>push() khi Stack đầy (Array cố định) → Stack Overflow</li>
+            <li>Luôn kiểm tra isEmpty() trước khi gọi pop() hoặc top()</li>
+          </ul>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 6: Implementation (Array + Linked List) -->
+    <section class="slide slide--light slide--compact" data-index="5">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>⚙️ Cách cài đặt Stack</h2>
+          <p>Hai cách phổ biến — cùng thao tác O(1), khác cách lưu trữ</p>
+        </div>
+      </div>
+      <div class="slide-body impl-grid stagger">
+        <div class="impl-col">
+          <h3>📦 Bằng Mảng — <code>top</code> trỏ vị trí trên cùng</h3>
+          <div class="code-panel">
+            <div class="code-panel__bar">
+              <span class="code-panel__dot"></span><span class="code-panel__dot"></span><span class="code-panel__dot"></span>
+              <span class="code-panel__lang">array</span>
+            </div>
+            <pre><span class="ty">int</span> a[<span class="num">100</span>];
+<span class="ty">int</span> top = -<span class="num">1</span>;  <span class="cm">// -1 = rỗng</span>
+
+<span class="ty">void</span> <span class="fn">push</span>(<span class="ty">int</span> x) {
+  a[++top] = x;
+}
+
+<span class="ty">int</span> <span class="fn">pop</span>() {
+  <span class="kw">return</span> a[top--];
+}
+
+<span class="ty">int</span> <span class="fn">peek</span>() {
+  <span class="kw">return</span> a[top];
+}
+
+<span class="ty">bool</span> <span class="fn">empty</span>() {
+  <span class="kw">return</span> top == -<span class="num">1</span>;
+}</pre>
+          </div>
+          <div class="impl-notes">
+            <span class="pro">✅ Đơn giản, nhanh, bộ nhớ liên tục</span><br>
+            <span class="con">❌ Giới hạn kích thước mảng (hoặc cần resize)</span>
+          </div>
+        </div>
+        <div class="impl-col">
+          <h3>🔗 Bằng Linked List — <code>head</code> chính là Top</h3>
+          <div class="code-panel">
+            <div class="code-panel__bar">
+              <span class="code-panel__dot"></span><span class="code-panel__dot"></span><span class="code-panel__dot"></span>
+              <span class="code-panel__lang">linked_list</span>
+            </div>
+            <pre><span class="kw">struct</span> <span class="ty">Node</span> {
+  <span class="ty">int</span> val;
+  <span class="ty">Node</span>* next;
+};
+
+<span class="ty">Node</span>* head = <span class="kw">NULL</span>;
+
+<span class="ty">void</span> <span class="fn">push</span>(<span class="ty">int</span> x) {
+  head = <span class="kw">new</span> <span class="ty">Node</span>{x, head};
+}
+
+<span class="ty">int</span> <span class="fn">pop</span>() {
+  <span class="ty">int</span> v = head-&gt;val;
+  head = head-&gt;next;
+  <span class="kw">return</span> v;
+}
+
+<span class="ty">int</span> <span class="fn">peek</span>() {
+  <span class="kw">return</span> head-&gt;val;
+}
+
+<span class="ty">bool</span> <span class="fn">empty</span>() {
+  <span class="kw">return</span> head == <span class="kw">NULL</span>;
+}</pre>
+          </div>
+          <div class="impl-notes">
+            <span class="pro">✅ Kích thước linh hoạt, không giới hạn trước</span><br>
+            <span class="con">❌ Tốn bộ nhớ con trỏ, cần quản lý cấp phát</span>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 7: Pattern recognition -->
+    <section class="slide slide--light slide--compact" data-index="8">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>🔍 Nhận diện: Khi nào dùng Stack?</h2>
+          <p>Đọc đề bài — tìm dấu hiệu LIFO trong bài toán</p>
+        </div>
+      </div>
+      <div class="slide-body slide-body--scroll">
+        <div class="pattern-grid stagger">
+          <div class="pattern-card">
+            <div class="pattern-card__icon">🔗</div>
+            <h4>Khớp cặp (Matching)</h4>
+            <p>Mỗi phần tử đóng phải khớp với phần tử mở gần nhất.</p>
+            <div class="examples">(), [], {}, tags</div>
+          </div>
+          <div class="pattern-card">
+            <div class="pattern-card__icon">🪆</div>
+            <h4>Cấu trúc lồng nhau</h4>
+            <p>Xử lý từ trong ra ngoài — ngữ cảnh bên trong kết thúc trước.</p>
+            <div class="examples">parse, DFS, HTML</div>
+          </div>
+          <div class="pattern-card">
+            <div class="pattern-card__icon">↩️</div>
+            <h4>Xử lý ngược</h4>
+            <p>Cần truy cập phần tử vừa thêm gần nhất trước.</p>
+            <div class="examples">undo, backtrack</div>
+          </div>
+          <div class="pattern-card">
+            <div class="pattern-card__icon">🧮</div>
+            <h4>Biểu thức toán học</h4>
+            <p>Tính toán theo thứ tự ưu tiên / hậu tố.</p>
+            <div class="examples">infix → postfix, RPN</div>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:1rem">
+          <strong>🧠 Quy trình tiếp cận bài toán</strong>
+          <ul>
+            <li>Bước 1: Đề có yêu cầu "gần nhất", "lồng nhau", "khớp cặp" không?</li>
+            <li>Bước 2: Thử mô phỏng bằng push/pop thủ công với ví dụ nhỏ</li>
+            <li>Bước 3: Xác định lưu gì trong Stack (giá trị, chỉ số, hay cặp)</li>
+            <li>Bước 4: Test edge case — input rỗng, 1 phần tử, không khớp cặp, Stack còn dư khi kết thúc</li>
+          </ul>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 9: Exercises basic -->
+    <section class="slide slide--light slide--compact" data-index="10">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>📝 Bài tập ứng dụng — Cơ bản</h2>
+          <p>Nhấn bài tập để mở rộng — dùng nút <strong>Tiếp →</strong> / <strong>Tự chạy</strong> để demo từng bước</p>
+        </div>
+      </div>
+      <div class="slide-body slide-body--scroll">
+        <div class="exercise-list stagger" data-accordion>
+          <div class="exercise exercise--expandable">
+            <span class="level level--basic">Cơ bản</span>
+            <div>
+              <button class="exercise__head" type="button" aria-expanded="false">
+                <span class="exercise__head-text">
+                  <h4>Valid Parentheses — Kiểm tra dấu ngoặc hợp lệ</h4>
+                  <span class="expand-hint">Nhấn để xem chi tiết &amp; demo ▼</span>
+                </span>
+                <span class="expand-icon">▼</span>
+              </button>
+              <p class="idea">Gặp mở <code>( [ {</code> → push; gặp đóng → pop và so khớp. Cuối cùng Stack rỗng.</p>
+              <div class="meta">
+                <span class="meta-tag">Pattern: <strong>Matching</strong></span>
+                <span class="meta-tag">Độ phức tạp: <span class="time">O(n)</span></span>
+              </div>
+              <div class="exercise__detail">
+                <div class="detail-block">
+                  <strong>💡 Ý tưởng</strong>
+                  <p>Dấu đóng phải khớp với dấu mở <em>gần nhất</em> — đúng tinh thần LIFO của Stack.</p>
+                </div>
+                <div class="detail-block">
+                  <strong>▶ Demo từng bước — chuỗi <code>{[()]}</code></strong>
+                  <div class="step-demo" data-demo="parens"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="exercise exercise--expandable">
+            <span class="level level--mid">Trung bình</span>
+            <div>
+              <button class="exercise__head" type="button" aria-expanded="false">
+                <span class="exercise__head-text">
+                  <h4>Min Stack — Stack hỗ trợ getMin() trong O(1)</h4>
+                  <span class="expand-hint">Nhấn để xem chi tiết &amp; demo ▼</span>
+                </span>
+                <span class="expand-icon">▼</span>
+              </button>
+              <p class="idea">Dùng <strong>2 stack</strong>: <code>st</code> + <code>minSt</code> lưu min hiện tại.</p>
+              <div class="meta">
+                <span class="meta-tag">Pattern: <strong>Thiết kế ADT</strong></span>
+                <span class="meta-tag">Độ phức tạp: <span class="time">O(1)</span> mọi thao tác</span>
+              </div>
+              <div class="exercise__detail">
+                <div class="detail-block">
+                  <strong>💡 Quy tắc</strong>
+                  <ul>
+                    <li>Push x: luôn push vào <code>st</code>; push <code>minSt</code> nếu x ≤ min hiện tại</li>
+                    <li>Pop: nếu <code>st.top == minSt.top</code> thì pop cả hai</li>
+                    <li>getMin(): trả <code>minSt.top()</code></li>
+                  </ul>
+                </div>
+                <div class="detail-block">
+                  <strong>▶ Demo — push(3) → push(1) → push(2) → getMin → pop → pop</strong>
+                  <div class="step-demo" data-demo="minstack"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="exercise exercise--expandable">
+            <span class="level level--mid">Trung bình</span>
+            <div>
+              <button class="exercise__head" type="button" aria-expanded="false">
+                <span class="exercise__head-text">
+                  <h4>Evaluate Reverse Polish Notation</h4>
+                  <span class="expand-hint">Nhấn để xem chi tiết &amp; demo ▼</span>
+                </span>
+                <span class="expand-icon">▼</span>
+              </button>
+              <p class="idea">Biểu thức <code>2 1 + 3 *</code> = <code>(2+1)×3 = 9</code></p>
+              <div class="meta">
+                <span class="meta-tag">Pattern: <strong>Biểu thức</strong></span>
+                <span class="meta-tag">Độ phức tạp: <span class="time">O(n)</span></span>
+              </div>
+              <div class="exercise__detail">
+                <div class="detail-block">
+                  <strong>💡 Quy tắc</strong>
+                  <ul>
+                    <li>Số → push; toán tử → pop 2 số, tính, push kết quả</li>
+                    <li>Thứ tự pop: <code>b</code> pop trước, <code>a</code> pop sau → tính <code>a op b</code></li>
+                  </ul>
+                </div>
+                <div class="detail-block">
+                  <strong>▶ Demo từng token</strong>
+                  <div class="step-demo" data-demo="rpn"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 10: Exercises advanced -->
+    <section class="slide slide--light slide--compact" data-index="12">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>📝 Bài tập ứng dụng — Nâng cao</h2>
+          <p>Nhấn bài tập để mở rộng — dùng <strong>Tiếp →</strong> / <strong>Tự chạy</strong> để demo từng bước</p>
+        </div>
+      </div>
+      <div class="slide-body slide-body--scroll">
+        <div class="exercise-list stagger" data-accordion>
+          <div class="exercise exercise--expandable">
+            <span class="level level--mid">Trung bình</span>
+            <div>
+              <button class="exercise__head" type="button" aria-expanded="false">
+                <span class="exercise__head-text">
+                  <h4>Decode String — Giải mã chuỗi có ngoặc</h4>
+                  <span class="expand-hint">Nhấn để xem chi tiết &amp; demo ▼</span>
+                </span>
+                <span class="expand-icon">▼</span>
+              </button>
+              <p class="idea"><code>3[a2[c]]</code> → <code>accaccacc</code></p>
+              <div class="meta">
+                <span class="meta-tag">Pattern: <strong>Lồng nhau</strong></span>
+                <span class="meta-tag">Độ phức tạp: <span class="time">O(n)</span></span>
+              </div>
+              <div class="exercise__detail">
+                <div class="detail-block">
+                  <strong>💡 Ý tưởng</strong>
+                  <p>Gặp <code>[</code> push trạng thái; gặp <code>]</code> pop, lặp chuỗi con rồi ghép lại.</p>
+                </div>
+                <div class="detail-block">
+                  <strong>▶ Demo từng ký tự — <code>3[a2[c]]</code></strong>
+                  <div class="step-demo" data-demo="decode"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="exercise exercise--expandable">
+            <span class="level level--mid">Trung bình</span>
+            <div>
+              <button class="exercise__head" type="button" aria-expanded="false">
+                <span class="exercise__head-text">
+                  <h4>Simplify Path (Unix cd)</h4>
+                  <span class="expand-hint">Nhấn để xem chi tiết &amp; demo ▼</span>
+                </span>
+                <span class="expand-icon">▼</span>
+              </button>
+              <p class="idea"><code>/home/./user/../doc/</code> → <code>/home/doc</code></p>
+              <div class="meta">
+                <span class="meta-tag">Pattern: <strong>Xử lý ngược</strong></span>
+                <span class="meta-tag">Độ phức tạp: <span class="time">O(n)</span></span>
+              </div>
+              <div class="exercise__detail">
+                <div class="detail-block">
+                  <strong>💡 Quy tắc</strong>
+                  <ul>
+                    <li>Tên thư mục → push; <code>.</code> → bỏ qua; <code>..</code> → pop</li>
+                  </ul>
+                </div>
+                <div class="detail-block">
+                  <strong>▶ Demo từng phần path</strong>
+                  <div class="step-demo" data-demo="path"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="callout" style="margin-top:0.75rem">
+          <strong>⚠️ Edge case hay gặp</strong>
+          <ul>
+            <li>Stack rỗng khi pop/top — luôn guard bằng isEmpty()</li>
+            <li>Phần tử cuối chưa được xử lý — duyệt thêm hoặc kiểm tra sau vòng lặp</li>
+            <li>Chuỗi/ngoặc không khớp — trả về false thay vì pop khi Stack rỗng</li>
+          </ul>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 14: Applications -->
+    <section class="slide slide--light slide--compact" data-index="13">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>🔧 Ứng dụng thực tế — Tổng quan</h2>
+          <p>6 nhóm ứng dụng phổ biến — các slide sau đi sâu từng ví dụ</p>
+        </div>
+      </div>
+      <div class="slide-body">
+        <div class="app-grid stagger">
+          <div class="app-card">
+            <div class="app-card__icon">📞</div>
+            <h4>Call Stack</h4>
+            <p>Runtime lưu lời gọi hàm lồng nhau — khi hàm return, frame trên cùng được pop khỏi stack.</p>
+          </div>
+          <div class="app-card">
+            <div class="app-card__icon">↩️</div>
+            <h4>Undo / Redo</h4>
+            <p>Editor, IDE lưu lịch sử thao tác — Undo pop trạng thái gần nhất, Redo push lại.</p>
+          </div>
+          <div class="app-card">
+            <div class="app-card__icon">🔍</div>
+            <h4>DFS & Backtracking</h4>
+            <p>Duyệt đồ thị theo chiều sâu, giải Sudoku, tìm đường — Stack (hoặc đệ quy) quản lý nhánh cần quay lại.</p>
+          </div>
+          <div class="app-card">
+            <div class="app-card__icon">⚙️</div>
+            <h4>Parser & Biên dịch</h4>
+            <p>Kiểm tra cặp ngoặc, phân tích biểu thức, cú pháp ngôn ngữ lập trình — Stack xử lý cấu trúc lồng nhau.</p>
+          </div>
+          <div class="app-card">
+            <div class="app-card__icon">🧵</div>
+            <h4>Quản lý tác vụ (Task Stack)</h4>
+            <p>Hệ điều hành, ứng dụng Android quản lý Activity/Fragment theo thứ tự LIFO khi người dùng điều hướng.</p>
+          </div>
+          <div class="app-card">
+            <div class="app-card__icon">🔄</div>
+            <h4>Thuật toán biến đổi</h4>
+            <p>Đảo chuỗi, chuyển Infix → Postfix, tính biểu thức hậu tố — Stack xử lý thứ tự ngược tự nhiên.</p>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 12: Call Stack example -->
+    <section class="slide slide--light slide--compact">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>📞 Ví dụ: Call Stack</h2>
+          <p>Runtime quản lý lời gọi hàm lồng nhau — mỗi lần gọi push, return thì pop</p>
+        </div>
+      </div>
+      <div class="slide-body realworld-cols stagger">
+        <div>
+          <div class="context-box">
+            <p><strong>Tình huống:</strong> Gọi <code>main()</code> → <code>foo()</code> → <code>bar()</code>. Mỗi hàm là một <em>stack frame</em> lưu biến cục bộ, địa chỉ return.</p>
+          </div>
+          <div class="code-panel">
+            <div class="code-panel__bar">
+              <span class="code-panel__dot"></span><span class="code-panel__dot"></span><span class="code-panel__dot"></span>
+              <span class="code-panel__lang">nested_calls.cpp</span>
+            </div>
+            <pre><span class="ty">void</span> <span class="fn">bar</span>()  { <span class="cm">/* in ra "C" */</span> }
+<span class="ty">void</span> <span class="fn">foo</span>()  { <span class="fn">bar</span>(); }
+<span class="ty">int</span>  <span class="fn">main</span>() { <span class="fn">foo</span>(); <span class="kw">return</span> <span class="num">0</span>; }</pre>
+          </div>
+        </div>
+        <div class="example-flow">
+          <div class="flow-step">
+            <span class="flow-step__num">1</span>
+            <div>
+              <strong>main() bắt đầu → push frame main</strong>
+              <div class="stack-viz">Call Stack (đáy → top)
+┌────────┐
+│  main  │ ← Top
+└────────┘</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-step__num">2</span>
+            <div>
+              <strong>main gọi foo() → push frame foo</strong>
+              <div class="stack-viz">┌────────┐
+│  foo   │ ← Top
+├────────┤
+│  main  │
+└────────┘</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-step__num">3</span>
+            <div>
+              <strong>foo gọi bar() → push frame bar → in "C"</strong>
+              <div class="stack-viz">┌────────┐
+│  bar   │ ← Top
+├────────┤
+│  foo   │
+│  main  │
+└────────┘</div>
+            </div>
+          </div>
+          <div class="flow-step">
+            <span class="flow-step__num">4</span>
+            <div>
+              <strong>bar return → pop · foo return → pop · main kết thúc</strong>
+              <p>Stack trace khi crash = in ngược Call Stack. Đệ quy vô hạn → <strong>Stack Overflow</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 13: Undo & Navigation example -->
+    <section class="slide slide--light slide--compact">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>↩️ Ví dụ: Undo/Redo &amp; Điều hướng</h2>
+          <p>Lưu trạng thái gần nhất — phù hợp editor, trình duyệt, Android</p>
+        </div>
+      </div>
+      <div class="slide-body realworld-cols stagger">
+        <div class="card">
+          <div class="section-label">📝 Undo trong trình soạn thảo</div>
+          <div class="example-flow">
+            <div class="flow-step">
+              <span class="flow-step__num">1</span>
+              <div>
+                <strong>Gõ "Hi" → push snapshot "Hi"</strong>
+                <div class="stack-viz">Undo Stack: [ "Hi" ]</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">2</span>
+              <div>
+                <strong>Gõ tiếp "Hello" → push snapshot "Hello"</strong>
+                <div class="stack-viz">Undo Stack: [ "Hi", "Hello" ] ← Top</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">3</span>
+              <div>
+                <strong>Nhấn Undo → pop "Hello", khôi phục "Hi"</strong>
+                <p>Redo Stack push lại "Hello" nếu cần làm lại.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-label">📱 Activity Stack (Android)</div>
+          <div class="example-flow">
+            <div class="flow-step">
+              <span class="flow-step__num">1</span>
+              <div>
+                <strong>Mở màn hình A → push Activity A</strong>
+                <div class="stack-viz">Task Stack: [ A ]</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">2</span>
+              <div>
+                <strong>Chuyển sang B, rồi C → push lần lượt</strong>
+                <div class="stack-viz">Task Stack: [ A, B, C ] ← Top</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">3</span>
+              <div>
+                <strong>Nhấn Back → pop C, hiện B. Back tiếp → pop B, hiện A</strong>
+                <p>Tương tự nút <strong>Back</strong> trình duyệt — URL/màn hình trước nằm dưới Top.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 14: Parser & DFS example -->
+    <section class="slide slide--light slide--compact">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>⚙️ Ví dụ: Parser &amp; DFS</h2>
+          <p>Stack xử lý cấu trúc lồng nhau trong biên dịch và duyệt đồ thị</p>
+        </div>
+      </div>
+      <div class="slide-body realworld-cols stagger">
+        <div class="card">
+          <div class="section-label">🔍 Kiểm tra dấu ngoặc: <code>{ [ ( ) ] }</code></div>
+          <div class="example-flow">
+            <div class="flow-step">
+              <span class="flow-step__num">1</span>
+              <div>
+                <strong>Gặp <code>{</code> <code>[</code> <code>(</code> → push lần lượt</strong>
+                <div class="stack-viz">Stack: [ '{', '[', '(' ] ← Top</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">2</span>
+              <div>
+                <strong>Gặp <code>)</code> → pop <code>(</code>, khớp ✓</strong>
+                <div class="stack-viz">Stack: [ '{', '[' ]</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">3</span>
+              <div>
+                <strong>Gặp <code>]</code> rồi <code>}</code> → pop hết, Stack rỗng → hợp lệ</strong>
+                <p>Compiler dùng Stack tương tự khi parse <code>if { ... while { ... } }</code></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="section-label">🗺️ DFS — tìm đường trong mê cung</div>
+          <div class="context-box">
+            <p>Đi sâu nhất có thể, gặp ngõ cụt thì <strong>quay lui</strong> — Stack lưu các ô cần quay lại (hoặc dùng đệ quy = Call Stack ngầm).</p>
+          </div>
+          <div class="example-flow">
+            <div class="flow-step">
+              <span class="flow-step__num">1</span>
+              <div>
+                <strong>Start → push (0,0). Đi xuống (1,0), (2,0)</strong>
+                <div class="stack-viz">Path Stack: [ (0,0), (1,0), (2,0) ]</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step__num">2</span>
+              <div>
+                <strong>Hết đường → pop (2,0), thử nhánh khác từ (1,0)</strong>
+                <p>Mỗi lần pop = backtrack một bước — đúng tinh thần LIFO.</p>
+              </div>
+            </div>
+          </div>
+          <div class="callout" style="margin-top:0.65rem;padding:0.85rem 1rem">
+            <strong>💡 Biểu thức: <code>3 + 4 * 5</code></strong>
+            <ul>
+              <li>Chuyển Infix → Postfix: <code>3 4 5 * +</code> (Stack lưu toán hạng &amp; toán tử)</li>
+              <li>Tính Postfix: gặp số push, gặp <code>+</code> pop 2 số, push kết quả</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+
+    <!-- SLIDE 15: Summary -->
+    <section class="slide slide--dark slide--compact" data-index="14">
+      <div class="slide-header">
+        <div class="slide-header__accent"></div>
+        <div class="slide-header__text">
+          <h2>📝 Tổng kết</h2>
+          <p>Kiến thức cốt lõi &amp; checklist trước khi làm bài tập</p>
+        </div>
+      </div>
+      <div class="slide-body slide-body--scroll">
+        <div class="summary-list stagger" style="margin-bottom:1.25rem">
+          <div class="summary-item">
+            <span class="check">✓</span>
+            LIFO — mọi thao tác chính O(1); guard underflow/overflow
+          </div>
+          <div class="summary-item">
+            <span class="check">✓</span>
+            Array (vector) cho tốc độ; Linked List cho kích thước động
+          </div>
+          <div class="summary-item">
+            <span class="check">✓</span>
+            Pattern: matching · nested · reverse · biểu thức
+          </div>
+          <div class="summary-item highlight">
+            <span class="check">✓</span>
+            Stack gắn với parser, DFS, biểu thức hậu tố và module hệ thống
+          </div>
+        </div>
+        <div class="section-label" style="color:var(--ice);margin-bottom:0.75rem">✅ Checklist giải bài</div>
+        <div class="checklist stagger">
+          <div class="check-item"><span class="num">1</span> Đọc đề — khớp pattern nào? matching · lồng nhau · xử lý ngược · biểu thức</div>
+          <div class="check-item"><span class="num">2</span> Stack lưu gì? giá trị, chỉ số, hay stack phụ (vd: minSt)</div>
+          <div class="check-item"><span class="num">3</span> Kiểm tra isEmpty() trước pop/top — viết pseudocode push/pop</div>
+          <div class="check-item"><span class="num">4</span> Test: input rỗng, 1 phần tử, không khớp cặp, Stack còn dư khi kết thúc</div>
+        </div>
+        <div class="qa-pill" style="margin-top:1.5rem">❓ Câu hỏi &amp; Bài tập</div>
+      </div>
+      <span class="footer-tag">Samsung · Cấu trúc Dữ liệu & Giải thuật</span>
+    </section>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="nav" aria-label="Điều hướng slide">
+    <button class="nav-btn" id="prev" aria-label="Slide trước">←</button>
+    <div class="nav-dots" id="dots"></div>
+    <span class="slide-counter" id="counter">1 / 14</span>
+    <button class="nav-btn" id="next" aria-label="Slide sau">→</button>
+  </nav>
+
+  <div class="key-hint"><kbd>←</kbd> <kbd>→</kbd> hoặc <kbd>Space</kbd> để chuyển slide</div>
+
+  <script>
+    const slides = [...document.querySelectorAll(".slide")];
+    const total = slides.length;
+    let current = 0;
+
+    const progress = document.getElementById("progress");
+    const counter = document.getElementById("counter");
+    const prevBtn = document.getElementById("prev");
+    const nextBtn = document.getElementById("next");
+    const dotsContainer = document.getElementById("dots");
+
+    slides.forEach((_, i) => {
+      const dot = document.createElement("button");
+      dot.className = "nav-dot" + (i === 0 ? " active" : "");
+      dot.setAttribute("aria-label", `Slide ${i + 1}`);
+      dot.addEventListener("click", () => goTo(i));
+      dotsContainer.appendChild(dot);
+    });
+
+    const dots = [...dotsContainer.querySelectorAll(".nav-dot")];
+
+    function resetSlide(slide) {
+      slide.classList.remove(
+        "active",
+        "slide--exit-forward",
+        "slide--exit-backward"
+      );
+      slide.style.transform = "";
+    }
+
+    function updateUI() {
+      progress.style.width = `${((current + 1) / total) * 100}%`;
+      counter.textContent = `${current + 1} / ${total}`;
+      prevBtn.disabled = current === 0;
+      nextBtn.disabled = current === total - 1;
+      dots.forEach((d, i) => d.classList.toggle("active", i === current));
+    }
+
+    function closeExpandedExercises() {
+      stopAllDemos();
+      document.querySelectorAll(".exercise--expandable.expanded").forEach((el) => {
+        el.classList.remove("expanded");
+        const btn = el.querySelector(".exercise__head");
+        if (btn) btn.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    function fmtStack(arr, label = "") {
+      const head = label ? `${label}:\n` : "";
+      if (!arr || !arr.length) return `${head}  ∅  (rỗng)`;
+      const lines = [...arr].reverse().map((v, i) =>
+        i === 0 ? `  ${v}  ← Top` : `  ${v}`
+      );
+      return head + lines.join("\n");
+    }
+
+    const DEMO_STEPS = {
+      parens: {
+        input: "{[()]}",
+        steps: [
+          { action: "🔵 Bắt đầu — Stack rỗng, duyệt chuỗi từ trái sang phải", stack: [], idx: -1 },
+          { action: "Đọc '{' — dấu mở → push vào Stack", stack: ["{"], idx: 0 },
+          { action: "Đọc '[' — dấu mở → push", stack: ["{", "["], idx: 1 },
+          { action: "Đọc '(' — dấu mở → push", stack: ["{", "[", "("], idx: 2 },
+          { action: "Đọc ')' — dấu đóng → pop '(' , khớp ✓", stack: ["{", "["], idx: 3 },
+          { action: "Đọc ']' — pop '[' , khớp ✓", stack: ["{"], idx: 4 },
+          { action: "Đọc '}' — pop '{' , khớp ✓", stack: [], idx: 5 },
+          { action: "✅ Hết chuỗi — Stack rỗng → dấu ngoặc hợp lệ!", stack: [], idx: 6, result: "Hợp lệ ✓" },
+        ],
+      },
+      minstack: {
+        steps: [
+          { action: "🔵 Khởi tạo — hai Stack rỗng", st: [], minSt: [] },
+          { action: "push(3) — push vào cả st và minSt", st: [3], minSt: [3] },
+          { action: "push(1) — 1 ≤ min → push minSt", st: [3, 1], minSt: [3, 1] },
+          { action: "push(2) — 2 > min → chỉ push st", st: [3, 1, 2], minSt: [3, 1] },
+          { action: "getMin() → minSt.top() = 1", st: [3, 1, 2], minSt: [3, 1], extra: "getMin() = 1" },
+          { action: "pop() — top st ≠ minSt.top → chỉ pop st", st: [3, 1], minSt: [3, 1] },
+          { action: "pop() — top st = minSt.top = 1 → pop cả hai", st: [3], minSt: [3] },
+          { action: "getMin() → 3", st: [3], minSt: [3], extra: "getMin() = 3", result: "Mọi thao tác O(1) ✓" },
+        ],
+      },
+      rpn: {
+        tokens: ["2", "1", "+", "3", "*"],
+        steps: [
+          { action: "🔵 Bắt đầu — Stack rỗng, đọc từng token trái → phải", stack: [], idx: -1 },
+          { action: 'Token "2" — là số → push', stack: [2], idx: 0 },
+          { action: 'Token "1" — là số → push', stack: [2, 1], idx: 1 },
+          { action: 'Token "+" — pop b=1, a=2 → 2+1=3 → push', stack: [3], idx: 2, extra: "Tính: 2 + 1 = 3" },
+          { action: 'Token "3" — là số → push', stack: [3, 3], idx: 3 },
+          { action: 'Token "*" — pop b=3, a=3 → 3×3=9 → push', stack: [9], idx: 4, extra: "Tính: 3 × 3 = 9" },
+          { action: "✅ Kết thúc — Stack còn 1 phần tử = kết quả", stack: [9], idx: 5, result: "Kết quả = 9 ✓" },
+        ],
+      },
+      decode: {
+        input: "3[a2[c]]",
+        steps: [
+          { action: "🔵 Bắt tạo — cur='', num=0", cur: "", num: 0, saved: "[]", idx: -1 },
+          { action: "Đọc '3' — cập nhật num = 3", cur: "", num: 3, saved: "[]", idx: 0 },
+          { action: "Đọc '[' — push (cur, num), reset cur & num", cur: "", num: 0, saved: '["",3]', idx: 1 },
+          { action: "Đọc 'a' — nối vào cur", cur: "a", num: 0, saved: '["",3]', idx: 2 },
+          { action: "Đọc '2' — num = 2", cur: "a", num: 2, saved: '["",3]', idx: 3 },
+          { action: "Đọc '[' — push ('a', 2), reset", cur: "", num: 0, saved: '["",3],["a",2]', idx: 4 },
+          { action: "Đọc 'c' — cur = 'c'", cur: "c", num: 0, saved: '["",3],["a",2]', idx: 5 },
+          { action: "Đọc ']' — cur='c' × 2 = 'cc', ghép 'a' → 'acc'", cur: "acc", num: 0, saved: '["",3]', idx: 6, extra: "Lặp chuỗi con 2 lần" },
+          { action: "Đọc ']' — 'acc' × 3 = 'accaccacc'", cur: "accaccacc", num: 0, saved: "[]", idx: 7, result: "accaccacc ✓" },
+        ],
+      },
+      path: {
+        parts: ["home", ".", "user", "..", "doc"],
+        steps: [
+          { action: "🔵 Tách path theo '/'", stack: [], idx: -1 },
+          { action: 'Phần "home" — tên thư mục → push', stack: ["home"], idx: 0 },
+          { action: 'Phần "." — thư mục hiện tại → bỏ qua', stack: ["home"], idx: 1 },
+          { action: 'Phần "user" — push', stack: ["home", "user"], idx: 2 },
+          { action: 'Phần ".." — lùi 1 cấp → pop', stack: ["home"], idx: 3 },
+          { action: 'Phần "doc" — push', stack: ["home", "doc"], idx: 4 },
+          { action: 'Ghép Stack → "/home/doc"', stack: ["home", "doc"], idx: 5, result: "/home/doc ✓" },
+        ],
+      },
+    };
+
+    function renderInputChars(input, idx) {
+      return [...input].map((ch, i) => {
+        let cls = "ch";
+        if (idx >= 0 && i === idx) cls += " ch--current";
+        else if (idx >= 0 && i < idx) cls += " ch--done";
+        return `<span class="${cls}">${ch}</span>`;
+      }).join("");
+    }
+
+    function renderTokens(tokens, idx) {
+      return tokens.map((t, i) => {
+        let cls = "ch";
+        if (idx >= 0 && i === idx) cls += " ch--current";
+        else if (idx >= 0 && i < idx) cls += " ch--done";
+        return `<span class="${cls}">${t}</span>`;
+      }).join(" ");
+    }
+
+    function renderPathParts(parts, idx) {
+      return parts.map((p, i) => {
+        let cls = "ch";
+        if (idx >= 0 && i === idx) cls += " ch--current";
+        else if (idx >= 0 && i < idx) cls += " ch--done";
+        return `<span class="${cls}">/${p}</span>`;
+      }).join("");
+    }
+
+    function renderDemo(el) {
+      const id = el.dataset.demo;
+      const data = DEMO_STEPS[id];
+      const step = data.steps[el._step];
+      const total = data.steps.length;
+      const counter = el.querySelector(".step-demo__counter");
+      const action = el.querySelector(".step-demo__action");
+      const viz = el.querySelector(".step-demo__viz");
+      const prevBtn = el.querySelector('[data-action="prev"]');
+      const nextBtn = el.querySelector('[data-action="next"]');
+
+      counter.textContent = `Bước ${el._step + 1} / ${total}`;
+      action.textContent = step.action + (step.extra ? `  ·  ${step.extra}` : "");
+      prevBtn.disabled = el._step === 0;
+      nextBtn.disabled = el._step === total - 1;
+
+      let html = "";
+
+      if (id === "parens") {
+        html += `<div class="step-demo__input">${renderInputChars(data.input, step.idx)}</div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Stack</div><pre>${fmtStack(step.stack, "")}</pre></div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Ghi chú</div><pre>${step.idx < 0 ? "Chưa đọc ký tự nào" : step.idx >= data.input.length ? "Đã duyệt hết" : `Đang xử lý index ${step.idx}`}</pre></div>`;
+      } else if (id === "minstack") {
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">st (chính)</div><pre>${fmtStack(step.st, "")}</pre></div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">minSt (phụ)</div><pre>${fmtStack(step.minSt, "")}</pre></div>`;
+      } else if (id === "rpn") {
+        html += `<div class="step-demo__input">${renderTokens(data.tokens, step.idx)}</div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Stack</div><pre>${fmtStack(step.stack, "")}</pre></div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Biểu thức</div><pre>(2 + 1) × 3 = ?</pre></div>`;
+      } else if (id === "decode") {
+        html += `<div class="step-demo__input">${renderInputChars(data.input, step.idx)}</div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Trạng thái</div><pre>cur = "${step.cur}"
+num = ${step.num}
+saved = ${step.saved}</pre></div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Kết quả tạm</div><pre>${step.cur || "(rỗng)"}</pre></div>`;
+      } else if (id === "path") {
+        html += `<div class="step-demo__input">${renderPathParts(data.parts, step.idx)}</div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Stack thư mục</div><pre>${fmtStack(step.stack, "")}</pre></div>`;
+        html += `<div class="step-demo__panel"><div class="step-demo__panel-label">Path hiện tại</div><pre>${step.stack.length ? "/" + step.stack.join("/") : "/"}</pre></div>`;
+      }
+
+      if (step.result) {
+        html += `<div class="step-demo__result">${step.result}</div>`;
+      }
+
+      viz.innerHTML = html;
+    }
+
+    function stopDemo(el) {
+      if (el._timer) {
+        clearInterval(el._timer);
+        el._timer = null;
+      }
+      const playBtn = el.querySelector('[data-action="play"]');
+      if (playBtn) {
+        playBtn.classList.remove("playing");
+        playBtn.textContent = "▶ Tự chạy";
+      }
+    }
+
+    function stopAllDemos() {
+      document.querySelectorAll(".step-demo[data-demo]").forEach(stopDemo);
+    }
+
+    function resetDemo(el) {
+      stopDemo(el);
+      el._step = 0;
+      renderDemo(el);
+    }
+
+    function buildDemoShell(el) {
+      el.innerHTML = `
+        <div class="step-demo__toolbar">
+          <span class="step-demo__counter">Bước 1 / 1</span>
+          <div class="step-demo__controls">
+            <button type="button" class="demo-btn" data-action="prev">← Trước</button>
+            <button type="button" class="demo-btn demo-btn--primary" data-action="next">Tiếp →</button>
+            <button type="button" class="demo-btn" data-action="play">▶ Tự chạy</button>
+            <button type="button" class="demo-btn" data-action="reset">↺</button>
+          </div>
+        </div>
+        <p class="step-demo__action"></p>
+        <div class="step-demo__viz"></div>
+      `;
+      el._step = 0;
+
+      el.querySelector('[data-action="prev"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        stopDemo(el);
+        if (el._step > 0) { el._step--; renderDemo(el); }
+      });
+
+      el.querySelector('[data-action="next"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        stopDemo(el);
+        const max = DEMO_STEPS[el.dataset.demo].steps.length - 1;
+        if (el._step < max) { el._step++; renderDemo(el); }
+      });
+
+      el.querySelector('[data-action="reset"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        resetDemo(el);
+      });
+
+      el.querySelector('[data-action="play"]').addEventListener("click", (e) => {
+        e.stopPropagation();
+        const playBtn = e.currentTarget;
+        if (el._timer) {
+          stopDemo(el);
+          return;
+        }
+        playBtn.classList.add("playing");
+        playBtn.textContent = "⏸ Dừng";
+        el._timer = setInterval(() => {
+          const max = DEMO_STEPS[el.dataset.demo].steps.length - 1;
+          if (el._step >= max) {
+            stopDemo(el);
+            return;
+          }
+          el._step++;
+          renderDemo(el);
+        }, 1400);
+      });
+
+      renderDemo(el);
+    }
+
+    function initStepDemos() {
+      document.querySelectorAll(".step-demo[data-demo]").forEach(buildDemoShell);
+    }
+
+    function goTo(index) {
+      if (index === current || index < 0 || index >= total) return;
+
+      closeExpandedExercises();
+
+      const forward = index > current;
+      const outgoing = slides[current];
+      const incoming = slides[index];
+
+      outgoing.classList.remove("active");
+      outgoing.classList.add(
+        forward ? "slide--exit-forward" : "slide--exit-backward"
+      );
+
+      current = index;
+
+      resetSlide(incoming);
+      incoming.style.transform = forward
+        ? "translateX(40px)"
+        : "translateX(-40px)";
+      incoming.classList.add("active");
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          incoming.style.transform = "";
+        });
+      });
+
+      setTimeout(() => {
+        outgoing.classList.remove("slide--exit-forward", "slide--exit-backward");
+        outgoing.style.transform = "";
+      }, 700);
+
+      updateUI();
+    }
+
+    function next() { goTo(current + 1); }
+    function prev() { goTo(current - 1); }
+
+    prevBtn.addEventListener("click", (e) => { e.preventDefault(); prev(); });
+    nextBtn.addEventListener("click", (e) => { e.preventDefault(); next(); });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") {
+        e.preventDefault();
+        next();
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        prev();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        goTo(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        goTo(total - 1);
+      }
+    });
+
+    let touchStartX = 0;
+    document.addEventListener("touchstart", (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    document.addEventListener("touchend", (e) => {
+      const diff = touchStartX - e.changedTouches[0].screenX;
+      if (Math.abs(diff) > 50) {
+        diff > 0 ? next() : prev();
+      }
+    }, { passive: true });
+
+    document.querySelectorAll("[data-accordion]").forEach((list) => {
+      list.querySelectorAll(".exercise--expandable").forEach((item) => {
+        const head = item.querySelector(".exercise__head");
+        if (!head) return;
+
+        head.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const willExpand = !item.classList.contains("expanded");
+
+          list.querySelectorAll(".exercise--expandable.expanded").forEach((other) => {
+            if (other !== item) {
+              other.classList.remove("expanded");
+              const otherBtn = other.querySelector(".exercise__head");
+              if (otherBtn) otherBtn.setAttribute("aria-expanded", "false");
+            }
+          });
+
+          item.classList.toggle("expanded", willExpand);
+          head.setAttribute("aria-expanded", willExpand ? "true" : "false");
+
+          if (willExpand) {
+            item.querySelectorAll(".step-demo[data-demo]").forEach(resetDemo);
+          } else {
+            item.querySelectorAll(".step-demo[data-demo]").forEach(stopDemo);
+          }
+        });
+      });
+    });
+
+    initStepDemos();
+    updateUI();
+  </script>
+</body>
+</html>
