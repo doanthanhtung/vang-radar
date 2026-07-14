@@ -1,9 +1,13 @@
 "use client";
 
-import { ArrowDown, ArrowUp, CheckCircle2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, FlaskConical, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { GoldPriceHistory, MarketSummaryProduct } from "../../lib/api-client";
+import { useEffect, useMemo, useState } from "react";
+import type {
+  ExperimentalDrawdownPlan,
+  GoldPriceHistory,
+  MarketSummaryProduct
+} from "../../lib/api-client";
 import { getGoldPriceHistory } from "../../lib/api-client";
 import { applyLiveGoldPriceHistory, toVietnamDateKey } from "../../lib/factor-history";
 import { formatPercent, formatVnd } from "../../lib/utils";
@@ -26,7 +30,8 @@ export function ProductTable({
 }) {
   const [selectedCode, setSelectedCode] = useState<string | null>(products[0]?.code ?? null);
   const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
-  const detailPanelRef = useRef<HTMLElement | null>(null);
+  const [showExperimentalPlan, setShowExperimentalPlan] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.code === selectedCode) ?? products[0] ?? null,
@@ -64,22 +69,38 @@ export function ProductTable({
     if (selectedProduct) loadHistory(selectedProduct.code);
   }, [selectedProduct?.code]);
 
+  useEffect(() => {
+    setShowExperimentalPlan(localStorage.getItem("vangscore:show-experimental-plan") === "true");
+  }, []);
+
+  useEffect(() => {
+    if (!isDetailOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsDetailOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDetailOpen]);
+
+  const toggleExperimentalPlan = () => {
+    setShowExperimentalPlan((current) => {
+      const next = !current;
+      localStorage.setItem("vangscore:show-experimental-plan", String(next));
+      return next;
+    });
+  };
+
   const selectProduct = (code: string) => {
     setSelectedCode(code);
     loadHistory(code);
-    window.setTimeout(() => {
-      const panel = detailPanelRef.current;
-      if (!panel) return;
-
-      const rect = panel.getBoundingClientRect();
-      const stickyHeaderOffset = 76;
-      const isMostlyVisible =
-        rect.top >= stickyHeaderOffset && rect.top < window.innerHeight * 0.72;
-      if (isMostlyVisible) return;
-
-      const targetTop = window.scrollY + rect.top - stickyHeaderOffset;
-      window.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
-    }, 0);
+    setIsDetailOpen(true);
   };
 
   const retryHistory = (code: string) => {
@@ -123,6 +144,7 @@ export function ProductTable({
               <button
                 type="button"
                 onClick={() => selectProduct(product.code)}
+                aria-haspopup="dialog"
                 aria-pressed={isSelected}
                 className="w-full p-4 text-left transition duration-200 hover:bg-white/[0.04] active:scale-[0.995]"
               >
@@ -205,46 +227,16 @@ export function ProductTable({
         </Table>
       </div>
 
-      {selectedProduct ? (
-        <section
-          ref={detailPanelRef}
-          className="research-card mt-4 overflow-hidden rounded-lg"
-          id="selected-product-history"
-        >
-          <div className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-                Chi tiết sản phẩm đang chọn
-              </p>
-              <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
-                {selectedProduct.name}
-              </h3>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 sm:justify-end sm:text-right">
-              <div>
-                <div className="text-xs text-muted">Điểm hiện tại</div>
-                <div className="mt-1 font-semibold text-foreground">
-                  {selectedProduct.score}/100
-                </div>
-              </div>
-              <SignalBadge signal={selectedProduct.signal} />
-              <Link
-                href={`/gold/${selectedProduct.code}`}
-                className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gold/40 bg-gold/[0.18] px-4 text-sm font-semibold text-gold shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_10px_24px_rgba(245,158,11,0.14)] transition hover:bg-gold/[0.22] active:scale-[0.98] sm:min-h-9 sm:w-auto sm:px-3 sm:font-medium sm:shadow-none"
-              >
-                Phân tích 180N
-              </Link>
-            </div>
-          </div>
-          <div className="p-3 sm:p-4">
-            <HistoryContent
-              state={historyByCode[selectedProduct.code]}
-              retry={() => retryHistory(selectedProduct.code)}
-              product={selectedProduct}
-              asOf={asOf}
-            />
-          </div>
-        </section>
+      {selectedProduct && isDetailOpen ? (
+        <ProductDetailDialog
+          product={selectedProduct}
+          historyState={historyByCode[selectedProduct.code]}
+          showExperimentalPlan={showExperimentalPlan}
+          asOf={asOf}
+          onClose={() => setIsDetailOpen(false)}
+          onToggleExperimentalPlan={toggleExperimentalPlan}
+          onRetryHistory={() => retryHistory(selectedProduct.code)}
+        />
       ) : null}
     </>
   );
@@ -274,7 +266,8 @@ function ProductRow({
             event.stopPropagation();
             onSelect();
           }}
-          aria-controls="selected-product-history"
+          aria-controls="product-detail-dialog"
+          aria-haspopup="dialog"
           aria-pressed={selected}
           className="flex w-full items-start gap-2 text-left"
         >
@@ -317,6 +310,101 @@ function SelectionMark({ selected }: { selected: boolean }) {
   );
 }
 
+function ProductDetailDialog({
+  product,
+  historyState,
+  showExperimentalPlan,
+  asOf,
+  onClose,
+  onToggleExperimentalPlan,
+  onRetryHistory
+}: {
+  product: MarketSummaryProduct;
+  historyState: HistoryState | undefined;
+  showExperimentalPlan: boolean;
+  asOf: string;
+  onClose: () => void;
+  onToggleExperimentalPlan: () => void;
+  onRetryHistory: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/72 px-3 py-3 backdrop-blur-sm sm:items-center sm:px-4 sm:py-6"
+      role="presentation"
+      onMouseDown={onClose}
+    >
+      <section
+        id="product-detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-detail-title"
+        className="research-card relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0 pr-10 sm:pr-0">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Chi tiết sản phẩm đang chọn
+            </p>
+            <h3
+              id="product-detail-title"
+              className="mt-1 text-lg font-semibold tracking-tight text-foreground"
+            >
+              {product.name}
+            </h3>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 sm:justify-end sm:text-right">
+            <div>
+              <div className="text-xs text-muted">Điểm hiện tại</div>
+              <div className="mt-1 font-semibold text-foreground">{product.score}/100</div>
+            </div>
+            <SignalBadge signal={product.signal} />
+            {product.experimentalDrawdownPlan ? (
+              <button
+                type="button"
+                onClick={onToggleExperimentalPlan}
+                aria-pressed={showExperimentalPlan}
+                className={`inline-flex min-h-9 w-full items-center justify-center rounded-md border px-3 text-sm font-medium transition active:scale-[0.98] sm:w-auto ${
+                  showExperimentalPlan
+                    ? "border-gold/45 bg-gold/[0.16] text-gold"
+                    : "border-white/[0.12] bg-white/[0.04] text-muted hover:text-foreground"
+                }`}
+              >
+                {showExperimentalPlan ? "Ẩn thử nghiệm" : "Hiện thử nghiệm"}
+              </button>
+            ) : null}
+            <Link
+              href={`/gold/${product.code}`}
+              className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gold/40 bg-gold/[0.18] px-4 text-sm font-semibold text-gold shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_10px_24px_rgba(245,158,11,0.14)] transition hover:bg-gold/[0.22] active:scale-[0.98] sm:min-h-9 sm:w-auto sm:px-3 sm:font-medium sm:shadow-none"
+            >
+              Phân tích 180N
+            </Link>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng chi tiết sản phẩm"
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.12] bg-white/[0.04] text-muted transition hover:bg-white/[0.08] hover:text-foreground active:scale-[0.98]"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-3 sm:p-4">
+          {showExperimentalPlan ? (
+            <ExperimentalDrawdownPlanCard plan={product.experimentalDrawdownPlan} />
+          ) : null}
+          <HistoryContent
+            state={historyState}
+            retry={onRetryHistory}
+            product={product}
+            asOf={asOf}
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function HistoryContent({
   state,
   retry,
@@ -349,6 +437,118 @@ function HistoryContent({
         spreadPct: product.spreadPct
       })}
     />
+  );
+}
+
+function ExperimentalDrawdownPlanCard({ plan }: { plan: ExperimentalDrawdownPlan | undefined }) {
+  if (!plan) return null;
+
+  const statusText =
+    plan.action === "TRIM"
+      ? "Cân nhắc giảm vị thế"
+      : plan.status === "READY"
+        ? "Có thể cân nhắc giải ngân"
+        : plan.status === "BLOCKED"
+          ? "Tạm dừng mua"
+          : "Chưa đến vùng mua";
+  const statusClass =
+    plan.status === "READY"
+      ? "border-positive/30 bg-positive/10 text-emerald-200"
+      : plan.status === "BLOCKED"
+        ? "border-caution/30 bg-caution/10 text-red-200"
+        : "border-white/[0.12] bg-white/[0.04] text-muted";
+  const nextLevel =
+    plan.nextBuyLevelPct === null ? "Đủ các nấc chính" : formatPercent(plan.nextBuyLevelPct);
+
+  return (
+    <aside className="mb-4 rounded-lg border border-gold/20 bg-gold/[0.055] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 rounded border border-gold/25 bg-gold/[0.12] px-2 py-1 text-xs font-medium text-gold">
+            <FlaskConical className="h-3.5 w-3.5" aria-hidden />
+            Thử nghiệm
+          </div>
+          <h4 className="mt-3 text-base font-semibold tracking-tight text-foreground">
+            Kế hoạch mua theo nấc
+          </h4>
+          <p className="mt-1 text-sm leading-6 text-muted">
+            Chiến lược drawdown 252 ngày, tối đa {formatPercent(plan.maxExposurePct)} vốn. Chỉ là
+            lớp tham khảo, không thay thế điểm VangScore chính.
+          </p>
+        </div>
+        <div className={`rounded-md border px-3 py-2 text-sm font-semibold ${statusClass}`}>
+          {statusText}
+        </div>
+      </div>
+
+      <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <PlanMetric
+          label={`Giảm từ đỉnh ${plan.drawdownWindowDays}N`}
+          value={formatPercent(plan.currentDrawdownPct)}
+        />
+        <PlanMetric label="Vốn mục tiêu" value={formatPercent(plan.suggestedExposurePct)} />
+        <PlanMetric label="Nấc mua kế tiếp" value={nextLevel} />
+        <PlanMetric label="Đỉnh tham chiếu" value={formatVnd(plan.rollingHighPriceVnd)} />
+        <PlanMetric
+          label="Premium percentile"
+          value={
+            plan.premiumPercentile === null
+              ? "Thiếu dữ liệu"
+              : formatPercent(plan.premiumPercentile)
+          }
+          muted={!plan.premiumOk}
+        />
+        <PlanMetric
+          label="Spread percentile"
+          value={
+            plan.spreadPercentile === null ? "Thiếu dữ liệu" : formatPercent(plan.spreadPercentile)
+          }
+          muted={!plan.spreadOk}
+        />
+      </dl>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div>
+          <div className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">Lý do</div>
+          <ul className="mt-2 space-y-1.5 text-sm leading-6 text-muted">
+            {plan.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <div className="text-xs font-medium uppercase tracking-[0.1em] text-slate-500">Lưu ý</div>
+          <ul className="mt-2 space-y-1.5 text-sm leading-6 text-muted">
+            {plan.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function PlanMetric({
+  label,
+  value,
+  muted = false
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-white/[0.08] bg-background/35 px-3 py-2">
+      <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+        {label}
+      </dt>
+      <dd
+        className={`mt-1 break-words text-sm font-semibold ${muted ? "text-red-300" : "text-foreground"}`}
+      >
+        {value}
+      </dd>
+    </div>
   );
 }
 
