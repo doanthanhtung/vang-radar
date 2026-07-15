@@ -39,6 +39,26 @@ export interface MarketSummaryProduct {
     buyPriceVnd: number;
     sellPriceVnd: number;
   } | null;
+  experimentalDrawdownPlan?: ExperimentalDrawdownPlan;
+}
+
+export interface ExperimentalDrawdownPlan {
+  enabled: true;
+  strategyName: "drawdown_ladder_v1";
+  status: "READY" | "WAIT" | "BLOCKED";
+  action: "BUY_STEP_1" | "BUY_STEP_2" | "TRIM" | "WAIT" | "BLOCKED";
+  currentDrawdownPct: number;
+  drawdownWindowDays: number;
+  rollingHighPriceVnd: number;
+  suggestedExposurePct: number;
+  maxExposurePct: number;
+  nextBuyLevelPct: number | null;
+  premiumPercentile: number | null;
+  spreadPercentile: number | null;
+  premiumOk: boolean;
+  spreadOk: boolean;
+  reasons: string[];
+  warnings: string[];
 }
 
 export interface MarketSummary {
