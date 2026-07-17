@@ -16,12 +16,19 @@ import {
   Workflow
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AdminLogin } from "../../components/admin-login";
+import { AdminShellLoading } from "../../components/admin-shell-loading";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, Td, Th } from "../../components/ui/table";
-import { deleteAdminJson, getAdminJson, getMarketSummary, postAdminJson } from "../../lib/api-client";
+import {
+  deleteAdminJson,
+  getAdminJson,
+  getMarketSummary,
+  postAdminJson
+} from "../../lib/api-client";
 import {
   clearAdminCredentials,
   loadAdminCredentials,
@@ -134,7 +141,11 @@ export default function AdminPage() {
   });
   const removeSubscriber = useMutation({
     mutationFn: async (subscriberId: string) =>
-      deleteAdminJson(`/admin/notifications/subscribers/${encodeURIComponent(subscriberId)}`, username, password),
+      deleteAdminJson(
+        `/admin/notifications/subscribers/${encodeURIComponent(subscriberId)}`,
+        username,
+        password
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-notification-subscribers"] });
     }
@@ -148,11 +159,11 @@ export default function AdminPage() {
     ? formatVietnamDateTime(summary.data.time)
     : "Chưa có dữ liệu";
 
-  if (!sessionReady) return null;
+  if (!sessionReady) return <AdminShellLoading />;
   if (!credentials) return <AdminLogin onAuthenticated={setCredentials} />;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-8">
       <section className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <p className="text-sm font-medium uppercase text-muted">Operations</p>
@@ -162,20 +173,20 @@ export default function AdminPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <a
+          <Link
             href="/admin/engine"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background active:translate-y-px"
           >
             <Workflow className="h-4 w-4" aria-hidden />
             Engine rules
-          </a>
-          <a
+          </Link>
+          <Link
             href="/admin/audit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background active:translate-y-px"
           >
             <ClipboardList className="h-4 w-4" aria-hidden />
             Audit log
-          </a>
+          </Link>
           <Button
             className="bg-panel text-foreground ring-1 ring-border hover:bg-background"
             onClick={() => refetchAll()}
@@ -213,7 +224,7 @@ export default function AdminPage() {
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-muted">Scope</span>
           <select
-            className="h-10 w-full rounded-md border border-border bg-panel px-3 text-sm outline-none"
+            className="h-11 w-full rounded-md border border-border bg-panel px-3 text-sm outline-none transition focus:border-gold/70"
             value={scope}
             onChange={(event) => setScope(event.target.value)}
           >
@@ -349,7 +360,8 @@ export default function AdminPage() {
           ) : null}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
             <span>
-              Trang {subscriberPage + 1} / {Math.max(1, Math.ceil((subscribers.data?.total ?? 0) / subscriberTake))}
+              Trang {subscriberPage + 1} /{" "}
+              {Math.max(1, Math.ceil((subscribers.data?.total ?? 0) / subscriberTake))}
             </span>
             <div className="flex items-center gap-2">
               <Button

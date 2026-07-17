@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { GOLD_PRODUCTS, PRODUCT_CODES } from "@vang-radar/domain";
 import { Card, CardContent } from "../../../components/ui/card";
 import { SignalBadge } from "../../../features/market/signal-badge";
@@ -52,8 +54,15 @@ export default async function ProductPage({
   const quickTake = buildQuickTake(product, metricHistory);
 
   return (
-    <main className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-8">
-      <div className="mb-4 rounded-lg border border-white/[0.08] bg-panel/60 p-3 shadow-panel sm:mb-6 sm:bg-transparent sm:p-0 sm:shadow-none md:flex md:items-end md:justify-between md:border-0">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-8">
+      <Link
+        href="/"
+        className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted transition hover:bg-white/[0.05] hover:text-foreground sm:-ml-2"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        Quay lại bảng giá
+      </Link>
+      <div className="mb-4 rounded-lg border border-white/[0.08] bg-panel/60 p-4 shadow-panel sm:mb-6 sm:bg-transparent sm:p-0 sm:shadow-none md:flex md:items-end md:justify-between md:border-0">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted sm:text-sm sm:normal-case sm:tracking-normal">
             {product.brand}
@@ -67,14 +76,21 @@ export default async function ProductPage({
         </div>
       </div>
 
-      <section className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-3">
+      <section
+        aria-label="Chỉ số hiện tại"
+        className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4"
+      >
         <MetricCard title="Mua vào" value={formatVnd(product.buyPrice)} />
         <MetricCard title="Bán ra" value={formatVnd(product.sellPrice)} emphasis />
+        <MetricCard
+          title="Premium"
+          value={formatPercentForMeta(product.premiumSellPct)}
+          meta="So với giá thế giới quy đổi"
+        />
         <MetricCard
           title="Spread"
           value={formatVnd(product.spreadAbsVnd)}
           meta={`${formatPercentForMeta(product.spreadPct)} giá bán`}
-          className="col-span-2 md:col-span-1"
         />
       </section>
 
@@ -104,7 +120,7 @@ export default async function ProductPage({
           {quickTake.points.map((point) => (
             <li
               key={point}
-              className="border-t border-white/[0.06] pt-2 first:border-t-0 first:pt-0"
+              className="relative border-t border-white/[0.06] py-2 pl-4 first:border-t-0 first:pt-0 before:absolute before:left-0 before:top-[1.05rem] before:h-1.5 before:w-1.5 before:rounded-full before:bg-gold/70 first:before:top-2"
             >
               {point}
             </li>

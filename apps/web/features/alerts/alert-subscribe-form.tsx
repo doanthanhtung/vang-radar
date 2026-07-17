@@ -46,7 +46,7 @@ export function AlertSubscribeForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="research-card w-full max-w-xl rounded-lg p-4 sm:p-5"
+      className="research-card w-full max-w-xl rounded-lg p-5 sm:p-6"
       noValidate
     >
       <label htmlFor="alert-email" className="text-sm font-semibold text-slate-100">
@@ -82,13 +82,14 @@ export function AlertSubscribeForm() {
           className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-gold px-5 text-sm font-bold text-slate-950 transition-transform hover:bg-yellow-300 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-          Đăng ký
+          {isLoading ? "Đang đăng ký…" : "Đăng ký"}
         </button>
       </div>
 
       <div className="mt-4 min-h-6" aria-live="polite">
         {message ? (
           <p
+            role={status === "error" ? "alert" : "status"}
             className={
               status === "success"
                 ? "flex items-start gap-2 text-sm text-emerald-300"

@@ -182,7 +182,11 @@ export function MetricCharts({
             { label: "Cao nhất", value: formatVnd(priceExtent[1]) }
           ]}
         />
-        <div className="h-64 px-1 pb-3 pt-2 sm:h-[340px] sm:px-4 sm:pb-4">
+        <div
+          className="h-64 px-1 pb-3 pt-2 sm:h-[340px] sm:px-4 sm:pb-4"
+          role="img"
+          aria-label={`Biểu đồ giá bán ra ${summaryLabel}. Hiện tại ${formatVnd(latest.sell)}.`}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={points} margin={{ top: 10, right: 10, bottom: 2, left: 0 }}>
               <defs>
@@ -231,7 +235,11 @@ export function MetricCharts({
           title="Premium so với vàng thế giới"
           description="Đường xanh là premium từng ngày; hai đường tham chiếu cho thấy mức thường gặp và vùng rất cao."
         />
-        <div className="h-60 px-1 pb-3 pt-2 sm:h-[320px] sm:px-4 sm:pb-4">
+        <div
+          className="h-60 px-1 pb-3 pt-2 sm:h-[320px] sm:px-4 sm:pb-4"
+          role="img"
+          aria-label={`Biểu đồ premium ${summaryLabel}. Hiện tại ${formatPercent(latest.premium)}.`}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 10, right: 10, bottom: 2, left: 0 }}>
               <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" vertical={false} />
@@ -292,7 +300,11 @@ export function MetricCharts({
             { label: "Rất cao nếu vượt", value: formatPercent(spreadStats.p95) }
           ]}
         />
-        <div className="h-60 px-1 pb-3 pt-2 sm:h-[300px] sm:px-4 sm:pb-4">
+        <div
+          className="h-60 px-1 pb-3 pt-2 sm:h-[300px] sm:px-4 sm:pb-4"
+          role="img"
+          aria-label={`Biểu đồ spread ${summaryLabel}. Hiện tại ${formatPercent(latest.spread)}.`}
+        >
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={points} margin={{ top: 10, right: 10, bottom: 2, left: 0 }}>
               <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" vertical={false} />

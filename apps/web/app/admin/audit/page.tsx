@@ -5,6 +5,7 @@ import { ArrowLeft, ClipboardList, Globe, LogOut, RefreshCw, Search } from "luci
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AdminLogin } from "../../../components/admin-login";
+import { AdminShellLoading } from "../../../components/admin-shell-loading";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -132,11 +133,11 @@ export default function AdminAuditPage() {
     setAppliedAction(action.trim());
   }
 
-  if (!sessionReady) return null;
+  if (!sessionReady) return <AdminShellLoading />;
   if (!credentials) return <AdminLogin onAuthenticated={setCredentials} />;
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-4 py-8">
       <section className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <Link
@@ -185,7 +186,7 @@ export default function AdminAuditPage() {
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-muted">Action</span>
           <input
-            className="h-10 w-full rounded-md border border-border bg-panel px-3 text-sm outline-none"
+            className="h-11 w-full rounded-md border border-border bg-panel px-3 text-sm outline-none transition focus:border-gold/70"
             value={action}
             onChange={(event) => setAction(event.target.value)}
             onKeyDown={(event) => event.key === "Enter" && applyFilter()}
@@ -214,7 +215,7 @@ export default function AdminAuditPage() {
             <label className="flex items-center gap-2 text-sm text-muted">
               <span>Loại</span>
               <select
-                className="h-9 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none"
+                className="h-11 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none transition focus:border-gold/70"
                 value={audience}
                 onChange={(event) => setAudience(event.target.value as VisitorAudience)}
               >
@@ -228,7 +229,7 @@ export default function AdminAuditPage() {
             <label className="flex items-center gap-2 text-sm text-muted">
               <span>Quốc gia</span>
               <select
-                className="h-9 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none"
+                className="h-11 rounded-md border border-border bg-panel px-3 text-sm text-foreground outline-none transition focus:border-gold/70"
                 value={country}
                 onChange={(event) => setCountry(event.target.value)}
               >

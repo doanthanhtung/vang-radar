@@ -5,6 +5,7 @@ import { ArrowLeft, LogOut, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AdminLogin } from "../../../components/admin-login";
+import { AdminShellLoading } from "../../../components/admin-shell-loading";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import {
@@ -56,11 +57,11 @@ export default function AdminEnginePage() {
     );
   }, [summary.data]);
 
-  if (!sessionReady) return null;
+  if (!sessionReady) return <AdminShellLoading />;
   if (!credentials) return <AdminLogin onAuthenticated={setCredentials} />;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
+    <main id="main-content" tabIndex={-1} className="mx-auto max-w-5xl px-4 py-8">
       <section className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <p className="text-sm font-medium uppercase text-muted">Signal Engine</p>
@@ -73,7 +74,7 @@ export default function AdminEnginePage() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/admin"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-panel px-4 text-sm font-medium text-foreground ring-1 ring-border transition-colors hover:bg-background active:translate-y-px"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Admin Console

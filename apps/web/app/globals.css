@@ -15,7 +15,7 @@ body {
   min-width: 320px;
   background:
     radial-gradient(circle at 18% -10%, rgba(217, 177, 89, 0.13), transparent 34rem),
-    radial-gradient(circle at 88% 10%, rgba(20, 184, 166, 0.08), transparent 30rem),
+    radial-gradient(circle at 88% 10%, rgba(148, 163, 184, 0.055), transparent 30rem),
     linear-gradient(180deg, #101826 0%, #0b1220 48%, #0d1422 100%);
   color: #f8fafc;
   font-family:
@@ -41,6 +41,7 @@ summary,
 select,
 input {
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button:focus-visible,
@@ -50,6 +51,11 @@ select:focus-visible,
 input:focus-visible {
   outline: 2px solid #facc15;
   outline-offset: 3px;
+}
+
+::selection {
+  background: rgba(217, 177, 89, 0.28);
+  color: #fff;
 }
 
 a {
@@ -143,4 +149,19 @@ a {
   top: 0;
   z-index: 1;
   backdrop-filter: blur(12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

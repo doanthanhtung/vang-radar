@@ -201,7 +201,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   };
 
   return (
-    <main id="main-content" className="pb-12">
+    <main id="main-content" tabIndex={-1} className="pb-12">
       <section className="dashboard-visual">
         <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 text-white md:pb-14 md:pt-12">
           <div className="max-w-4xl">
@@ -314,11 +314,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 <FactorHistoryTable
                   points={displayedFactorHistory}
                   format={
-                    expandedFactor === "xau"
-                      ? "usd"
-                      : expandedFactor === "dxy"
-                        ? "index"
-                      : "vnd"
+                    expandedFactor === "xau" ? "usd" : expandedFactor === "dxy" ? "index" : "vnd"
                   }
                   loading={factorHistoryLoading === expandedFactor}
                   error={factorHistoryError === expandedFactor}

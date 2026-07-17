@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowDown, ArrowUp, CheckCircle2, FlaskConical, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, FlaskConical, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ExperimentalDrawdownPlan,
   GoldPriceHistory,
@@ -32,6 +32,7 @@ export function ProductTable({
   const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
   const [showExperimentalPlan, setShowExperimentalPlan] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const lastFocusedElementRef = useRef<HTMLElement | null>(null);
 
   const rankedProducts = useMemo(
     () => [...products].sort((left, right) => right.score - left.score),
@@ -85,6 +86,7 @@ export function ProductTable({
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
+      window.requestAnimationFrame(() => lastFocusedElementRef.current?.focus());
     };
   }, [isDetailOpen]);
 
@@ -97,6 +99,8 @@ export function ProductTable({
   };
 
   const selectProduct = (code: string) => {
+    lastFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSelectedCode(code);
     loadHistory(code);
     setIsDetailOpen(true);
@@ -268,7 +272,7 @@ function ProductRow({
           aria-controls="product-detail-dialog"
           aria-haspopup="dialog"
           aria-pressed={selected}
-          className="flex w-full items-start gap-2 text-left"
+          className="flex min-h-11 w-full items-start gap-2 text-left"
         >
           <SelectionMark selected={selected} />
           <div>
@@ -297,15 +301,13 @@ function ProductRow({
 }
 
 function SelectionMark({ selected }: { selected: boolean }) {
-  if (selected) {
-    return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />;
-  }
-
   return (
     <span
-      className="mt-1 h-3.5 w-3.5 shrink-0 rounded-full border border-white/[0.14]"
+      className={`grid h-8 w-8 shrink-0 place-items-center rounded-md border transition ${selected ? "border-gold/35 bg-gold/10 text-gold" : "border-white/[0.1] bg-white/[0.025] text-muted"}`}
       aria-hidden
-    />
+    >
+      <ChevronRight className="h-4 w-4" />
+    </span>
   );
 }
 
@@ -326,6 +328,31 @@ function ProductDetailDialog({
   onToggleExperimentalPlan: () => void;
   onRetryHistory: () => void;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
+
+  const keepFocusInside = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Tab") return;
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !last) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/72 px-3 py-3 backdrop-blur-sm sm:items-center sm:px-4 sm:py-6"
@@ -333,12 +360,14 @@ function ProductDetailDialog({
       onMouseDown={onClose}
     >
       <section
+        ref={dialogRef}
         id="product-detail-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="product-detail-title"
         className="research-card relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
         onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={keepFocusInside}
       >
         <div className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 pr-10 sm:pr-0">
@@ -363,7 +392,7 @@ function ProductDetailDialog({
                 type="button"
                 onClick={onToggleExperimentalPlan}
                 aria-pressed={showExperimentalPlan}
-                className={`inline-flex min-h-9 w-full items-center justify-center rounded-md border px-3 text-sm font-medium transition active:scale-[0.98] sm:w-auto ${
+                className={`inline-flex min-h-11 w-full items-center justify-center rounded-md border px-3 text-sm font-medium transition active:scale-[0.98] sm:w-auto ${
                   showExperimentalPlan
                     ? "border-gold/45 bg-gold/[0.16] text-gold"
                     : "border-white/[0.12] bg-white/[0.04] text-muted hover:text-foreground"
@@ -374,16 +403,17 @@ function ProductDetailDialog({
             ) : null}
             <Link
               href={`/gold/${product.code}`}
-              className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-gold/40 bg-gold/[0.18] px-4 text-sm font-semibold text-gold shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_10px_24px_rgba(245,158,11,0.14)] transition hover:bg-gold/[0.22] active:scale-[0.98] sm:min-h-9 sm:w-auto sm:px-3 sm:font-medium sm:shadow-none"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md border border-gold/40 bg-gold/[0.18] px-4 text-sm font-semibold text-gold shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_10px_24px_rgba(245,158,11,0.14)] transition hover:bg-gold/[0.22] active:scale-[0.98] sm:w-auto sm:px-3 sm:font-medium sm:shadow-none"
             >
               Phân tích 180N
             </Link>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label="Đóng chi tiết sản phẩm"
-            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.12] bg-white/[0.04] text-muted transition hover:bg-white/[0.08] hover:text-foreground active:scale-[0.98]"
+            className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/[0.12] bg-white/[0.04] text-muted transition hover:bg-white/[0.08] hover:text-foreground active:scale-[0.98] sm:right-4 sm:top-4"
           >
             <X className="h-4 w-4" aria-hidden />
           </button>

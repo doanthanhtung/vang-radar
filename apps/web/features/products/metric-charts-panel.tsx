@@ -58,7 +58,7 @@ export function MetricChartsPanel({
                 key={option.value}
                 type="button"
                 onClick={() => setRange(option.value)}
-                className={`min-h-9 rounded px-2 text-sm font-medium transition sm:min-w-12 sm:px-3 ${
+                className={`min-h-11 rounded px-2 text-sm font-medium transition sm:min-w-12 sm:px-3 ${
                   selected
                     ? "bg-gold text-slate-950 shadow-sm"
                     : "text-muted hover:bg-background hover:text-foreground"
@@ -73,7 +73,9 @@ export function MetricChartsPanel({
       </div>
 
       {history.isLoading ? (
-        <ChartSkeleton />
+        <div aria-live="polite" aria-busy="true">
+          <ChartSkeleton />
+        </div>
       ) : history.isError ? (
         <ChartMessage message="Không tải được dữ liệu biểu đồ." />
       ) : !history.data?.length ? (

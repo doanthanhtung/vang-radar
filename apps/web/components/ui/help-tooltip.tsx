@@ -61,7 +61,7 @@ export function HelpTooltip({ text, className }: { text: string; className?: str
         type="button"
         aria-label={`Giải thích: ${text}`}
         aria-expanded={open}
-        className={className}
+        className={`-m-1.5 inline-grid h-11 w-11 shrink-0 place-items-center rounded-md text-muted transition hover:bg-white/[0.06] hover:text-foreground ${className ?? ""}`}
         onClick={() => setOpen((current) => !current)}
       >
         <CircleHelp className="h-3.5 w-3.5" aria-hidden />
@@ -75,7 +75,8 @@ export function HelpTooltip({ text, className }: { text: string; className?: str
               style={{
                 left: position.left,
                 top: position.top,
-                transform: position.placement === "above" ? "translate(-50%, -100%)" : "translateX(-50%)"
+                transform:
+                  position.placement === "above" ? "translate(-50%, -100%)" : "translateX(-50%)"
               }}
             >
               {text}

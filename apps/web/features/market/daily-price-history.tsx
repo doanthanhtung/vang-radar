@@ -99,7 +99,11 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         />
       </div>
 
-      <div className="h-56 rounded-md border border-white/[0.06] bg-background/35 p-2 sm:h-60">
+      <div
+        className="h-56 rounded-md border border-white/[0.06] bg-background/35 p-2 sm:h-60"
+        role="img"
+        aria-label={`${title}. Giá bán mới nhất ${formatFullPrice(latest.close)}.`}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={history.data} margin={{ top: 10, right: 8, bottom: 4, left: 6 }}>
             <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" vertical={false} />
@@ -301,9 +305,7 @@ function HistoryTooltip({
   if ((!active && !selected) || !point) return null;
   return (
     <div className="min-w-[245px] rounded-md border border-border bg-background p-3 text-xs shadow-panel">
-      <div className="mb-2 font-semibold text-foreground">
-        {dateLabel(point.date)}
-      </div>
+      <div className="mb-2 font-semibold text-foreground">{dateLabel(point.date)}</div>
       <div className="space-y-1 text-foreground">
         <TooltipLine
           label="Bán ra"
