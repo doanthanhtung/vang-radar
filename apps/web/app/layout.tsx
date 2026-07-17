@@ -41,14 +41,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </header>
           {children}
           <footer className="border-t border-white/[0.07] bg-background/70">
-            <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-8 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+            <div className="mx-auto max-w-7xl px-4 py-8 text-sm text-muted">
               <p>Thông tin chỉ mang tính tham khảo, không phải khuyến nghị đầu tư.</p>
-              <a
-                href="#main-content"
-                className="w-fit text-slate-300 transition-colors hover:text-gold"
-              >
-                Về đầu trang
-              </a>
             </div>
           </footer>
         </Providers>

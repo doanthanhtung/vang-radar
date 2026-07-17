@@ -385,25 +385,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
         </div>
         <ProductTable products={liveProducts} asOf={summary.time} />
       </section>
-
-      <section className="mx-auto max-w-7xl px-4 pt-4">
-        <details className="research-card rounded-lg p-4 text-sm text-muted">
-          <summary className="cursor-pointer font-medium text-foreground transition-colors hover:text-gold">
-            Xem cách tính & nguồn dữ liệu
-          </summary>
-          <div className="mt-3 space-y-2 leading-6">
-            <p>Nguồn giá vàng: bảng giá niêm yết từ các thương hiệu vàng trong nước.</p>
-            <p>
-              Premium = giá bán trong nước / giá thế giới quy đổi − 1. Spread = (giá bán − giá mua)
-              / giá bán.
-            </p>
-            <p>
-              VangScore = trung bình điểm tín hiệu của từng sản phẩm. Điểm từng sản phẩm do engine
-              quy tắc gán theo premium, spread, percentile lịch sử và momentum (không dùng AI).
-            </p>
-          </div>
-        </details>
-      </section>
     </main>
   );
 }
