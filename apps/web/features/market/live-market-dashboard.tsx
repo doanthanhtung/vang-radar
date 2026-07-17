@@ -4,18 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Clock3, Database, Gauge, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
-import type { GoldPriceHistory, MarketSummary } from "../../lib/api-client";
+import type { MarketSummary } from "../../lib/api-client";
 import {
   getApiUrl,
   getDxyHistory,
-  getGoldPriceHistory,
   getMarketSummary,
   getUsdVndHistory,
   getWorldGoldHistory
 } from "../../lib/api-client";
 import {
   applyLiveTodayValue,
-  buildAverageDailyGoldHistory,
   buildDxyDailyHistory,
   buildFxDailyHistory,
   buildWorldGoldDailyHistory,
@@ -33,7 +31,7 @@ import { ProductTable } from "./product-table";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
-type ExpandedFactor = "xau" | "dxy" | "usd" | "premium" | "spread";
+type ExpandedFactor = "xau" | "dxy" | "usd";
 type FactorHistoryFormat = "usd" | "vnd" | "money" | "percent" | "index";
 
 export function LiveMarketDashboard({ initialSummary }: { initialSummary: MarketSummary }) {
@@ -44,7 +42,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   >({});
   const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
   const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
-  const productHistoryPromiseRef = useRef<Record<string, Promise<GoldPriceHistory>>>({});
   const prefetchedFactorKeyRef = useRef<string | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
@@ -103,7 +100,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     summary.products.length > 0 && summary.world.xauUsdPerOz > 0 && summary.world.usdVnd > 0;
   const isStale = Date.now() - new Date(summary.time).getTime() > STALE_AFTER_MS;
   const decision = getVangDecision(isDataReady, vangScore, priceGap, averagePremium);
-  const productCodes = useMemo(() => liveProducts.map((product) => product.code), [liveProducts]);
   const todayKey = useMemo(() => toVietnamDateKey(summary.time), [summary.time]);
 
   const liveFactorValues = useMemo(
@@ -111,11 +107,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
       xau: summary.world.xauUsdPerOz > 0 ? summary.world.xauUsdPerOz : null,
       // DXY is an end-of-session macro series; do not copy an older close into today's row.
       dxy: null,
-      usd: summary.world.usdVnd > 0 ? summary.world.usdVnd : null,
-      premium: Number.isFinite(averagePremium) ? averagePremium : null,
-      spread: Number.isFinite(averageSpreadAbs) ? averageSpreadAbs : null
+      usd: summary.world.usdVnd > 0 ? summary.world.usdVnd : null
     }),
-    [summary.world.xauUsdPerOz, summary.world.usdVnd, averagePremium, averageSpreadAbs]
+    [summary.world.xauUsdPerOz, summary.world.usdVnd]
   );
 
   const displayedFactorHistory = useMemo(() => {
@@ -126,7 +120,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   }, [expandedFactor, factorHistory, todayKey, liveFactorValues]);
   const factorIndicatorHistory = useMemo(
     () =>
-      (["xau", "usd", "dxy", "premium", "spread"] as const).reduce(
+      (["xau", "usd", "dxy"] as const).reduce(
         (accumulator, factor) => {
           const cached = factorHistory[factor];
           accumulator[factor] = cached
@@ -143,11 +137,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     setFactorHistory({});
   }, [todayKey]);
 
-  const getProductHistory = useCallback((code: string) => {
-    productHistoryPromiseRef.current[code] ??= getGoldPriceHistory(code, 7);
-    return productHistoryPromiseRef.current[code]!;
-  }, []);
-
   const fetchFactorHistory = useCallback(
     async (factor: ExpandedFactor): Promise<FactorHistoryPoint[]> => {
       if (factor === "xau") {
@@ -162,13 +151,9 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
         return buildFxDailyHistory(await getUsdVndHistory(7));
       }
 
-      const histories = await Promise.all(productCodes.map((code) => getProductHistory(code)));
-      return buildAverageDailyGoldHistory(
-        histories,
-        factor === "premium" ? "premiumPercent" : "spreadAmount"
-      );
+      return buildFxDailyHistory(await getUsdVndHistory(7));
     },
-    [getProductHistory, productCodes]
+    []
   );
 
   const loadFactorHistory = useCallback(
@@ -188,18 +173,14 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   );
 
   useEffect(() => {
-    const prefetchKey = `${todayKey}:${productCodes.join(",")}`;
-    if (
-      !isDataReady ||
-      productCodes.length === 0 ||
-      prefetchedFactorKeyRef.current === prefetchKey
-    ) {
+    const prefetchKey = todayKey;
+    if (!isDataReady || prefetchedFactorKeyRef.current === prefetchKey) {
       return;
     }
 
     prefetchedFactorKeyRef.current = prefetchKey;
     const timeout = window.setTimeout(() => {
-      const factors: ExpandedFactor[] = ["xau", "usd", "dxy", "premium", "spread"];
+      const factors: ExpandedFactor[] = ["xau", "usd", "dxy"];
       void Promise.allSettled(
         factors.map(async (factor) => {
           const points = await fetchFactorHistory(factor);
@@ -211,7 +192,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     }, 900);
 
     return () => window.clearTimeout(timeout);
-  }, [fetchFactorHistory, isDataReady, productCodes, todayKey]);
+  }, [fetchFactorHistory, isDataReady, todayKey]);
 
   const toggleFactor = (factor: ExpandedFactor) => {
     const next = expandedFactor === factor ? null : factor;
@@ -222,20 +203,27 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   return (
     <main id="main-content" className="pb-12">
       <section className="dashboard-visual">
-        <div className="mx-auto grid max-w-7xl gap-6 px-4 pb-12 pt-8 text-white md:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)] md:items-end md:pb-14 md:pt-12">
-          <div className="max-w-3xl">
+        <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 text-white md:pb-14 md:pt-12">
+          <div className="max-w-4xl">
             <div className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
               <Activity className="h-3.5 w-3.5 text-gold" aria-hidden />
               Dashboard nghiên cứu giá vàng
             </div>
-            <h1 className="mt-5 max-w-2xl text-4xl font-semibold leading-[0.98] tracking-tight text-foreground md:text-6xl">
-              {decision.title}
-            </h1>
+            <div className="mt-5 flex flex-wrap items-end gap-x-4 gap-y-3">
+              <h1 className="text-4xl font-semibold leading-[0.98] tracking-tight text-foreground md:text-6xl">
+                {decision.title}
+              </h1>
+              <div className="flex items-center gap-2 rounded-md border border-gold/25 bg-gold/[0.08] px-3 py-2">
+                <span className="text-xs font-medium text-muted">VangScore</span>
+                <strong className="text-xl font-semibold tracking-tight text-gold">
+                  {decision.score === null ? "—" : decision.score}
+                  <span className="ml-1 text-xs font-medium text-muted">/100</span>
+                </strong>
+                <HelpTooltip text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
+              </div>
+            </div>
             <p className="mt-5 max-w-2xl text-pretty text-base leading-7 text-slate-200 md:text-lg">
-              {decision.reason}
-            </p>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
-              Gợi ý nghiên cứu: {decision.action}
+              {isDataReady ? decision.action : decision.reason}
             </p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs text-slate-300">
               <span className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.1] bg-slate-950/35 px-2.5 py-1.5">
@@ -253,27 +241,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 </span>
               ) : null}
             </div>
-          </div>
-
-          <aside className="research-card rounded-lg p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-medium text-muted">VangScore tổng hợp</p>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <strong className="text-4xl font-semibold tracking-tight text-gold">
-                    {decision.score === null ? "—" : decision.score}
-                  </strong>
-                  <span className="text-sm text-muted">/100</span>
-                </div>
-              </div>
-              <HelpTooltip text="VangScore là trung bình điểm tín hiệu của các sản phẩm (0–100). Điểm càng cao nghĩa là điều kiện mua hiện tại càng thuận lợi." />
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <SummaryMetric
-                label="Giá thế giới"
-                value={formatVndSafe(summary.world.worldVndPerLuong)}
-              />
-              <SummaryMetric label="Giá bán TB" value={formatVndSafe(averageSell)} />
+            <div className="mt-6 grid max-w-3xl grid-cols-2 gap-2 sm:grid-cols-3">
               <SummaryMetric label="Chênh lệch" value={formatVndSafe(priceGap)} tone="warn" />
               <SummaryMetric label="Premium TB" value={formatPercent(averagePremium)} tone="warn" />
               <SummaryMetric
@@ -283,19 +251,30 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 className="col-span-2 sm:col-span-1"
               />
             </div>
-          </aside>
+          </div>
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto -mt-5 max-w-7xl px-4 pt-0">
+      <section className="relative z-10 mx-auto -mt-5 max-w-7xl px-4 pb-6 pt-0">
+        <div className="mb-4 flex flex-col gap-1 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground">
+            Bảng so sánh sản phẩm
+          </h2>
+          <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-muted">
+            <Gauge className="h-3.5 w-3.5 text-gold" aria-hidden />
+            Sắp xếp theo điểm từ cao xuống
+          </span>
+        </div>
+        <ProductTable products={liveProducts} asOf={summary.time} />
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-6 pt-2">
         <Card>
           <CardHeader className="flex flex-col gap-1 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <CardTitle>Các yếu tố ảnh hưởng</CardTitle>
-            </div>
+            <CardTitle>Bối cảnh thị trường</CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-5 lg:gap-3">
+            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 lg:gap-3">
               <IndicatorFactor
                 label="XAU/USD"
                 value={
@@ -329,23 +308,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                 expanded={expandedFactor === "dxy"}
                 onToggle={() => toggleFactor("dxy")}
               />
-              <IndicatorFactor
-                label="Premium TB"
-                value={formatPercent(averagePremium)}
-                delta={getLatestFactorChange(factorIndicatorHistory.premium)}
-                format="percent"
-                expanded={expandedFactor === "premium"}
-                onToggle={() => toggleFactor("premium")}
-              />
-              <IndicatorFactor
-                label="Spread TB"
-                value={formatVndSafe(averageSpreadAbs)}
-                meta={formatPercent(averageSpread)}
-                delta={getLatestFactorChange(factorIndicatorHistory.spread)}
-                format="money"
-                expanded={expandedFactor === "spread"}
-                onToggle={() => toggleFactor("spread")}
-              />
             </div>
             {expandedFactor ? (
               <div className="mt-3 border-t border-border pt-3">
@@ -356,11 +318,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
                       ? "usd"
                       : expandedFactor === "dxy"
                         ? "index"
-                        : expandedFactor === "usd"
-                          ? "vnd"
-                          : expandedFactor === "spread"
-                            ? "money"
-                            : "percent"
+                      : "vnd"
                   }
                   loading={factorHistoryLoading === expandedFactor}
                   error={factorHistoryError === expandedFactor}
@@ -369,21 +327,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             ) : null}
           </CardContent>
         </Card>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-6 pt-6">
-        <div className="mb-4 flex flex-col gap-1 px-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">
-              Bảng so sánh sản phẩm
-            </h2>
-          </div>
-          <span className="inline-flex w-fit items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-xs text-muted">
-            <Gauge className="h-3.5 w-3.5 text-gold" aria-hidden />
-            Điểm càng cao càng thuận lợi
-          </span>
-        </div>
-        <ProductTable products={liveProducts} asOf={summary.time} />
       </section>
     </main>
   );

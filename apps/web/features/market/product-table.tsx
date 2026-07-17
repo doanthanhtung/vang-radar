@@ -28,13 +28,17 @@ export function ProductTable({
   products: MarketSummaryProduct[];
   asOf: string;
 }) {
-  const [selectedCode, setSelectedCode] = useState<string | null>(products[0]?.code ?? null);
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [historyByCode, setHistoryByCode] = useState<Record<string, HistoryState>>({});
   const [showExperimentalPlan, setShowExperimentalPlan] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  const rankedProducts = useMemo(
+    () => [...products].sort((left, right) => right.score - left.score),
+    [products]
+  );
   const selectedProduct = useMemo(
-    () => products.find((product) => product.code === selectedCode) ?? products[0] ?? null,
+    () => products.find((product) => product.code === selectedCode) ?? null,
     [products, selectedCode]
   );
 
@@ -55,15 +59,10 @@ export function ProductTable({
   };
 
   useEffect(() => {
-    if (products.length === 0) {
+    if (selectedCode && !products.some((product) => product.code === selectedCode)) {
       setSelectedCode(null);
-      return;
     }
-
-    if (!selectedProduct) {
-      setSelectedCode(products[0]!.code);
-    }
-  }, [products, selectedProduct]);
+  }, [products, selectedCode]);
 
   useEffect(() => {
     if (selectedProduct) loadHistory(selectedProduct.code);
@@ -132,7 +131,7 @@ export function ProductTable({
   return (
     <>
       <div className="space-y-3 md:hidden">
-        {products.map((product) => {
+        {rankedProducts.map((product) => {
           const isSelected = selectedProduct?.code === product.code;
           return (
             <article
@@ -212,7 +211,7 @@ export function ProductTable({
             </tr>
           </thead>
           <tbody>
-            {products.map((product) => {
+            {rankedProducts.map((product) => {
               const isSelected = selectedProduct?.code === product.code;
               return (
                 <ProductRow
