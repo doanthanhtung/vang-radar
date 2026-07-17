@@ -47,6 +47,7 @@ if ($SetProductionEnvSecret) {
 
 New-Item -ItemType Directory -Force -Path $RunnerRoot | Out-Null
 Set-Location $RunnerRoot
+$restartServiceForDockerAccess = $false
 
 if (-not (Test-Path ".\config.cmd")) {
   Write-Host "Downloading latest GitHub Actions runner..." -ForegroundColor Cyan
@@ -67,6 +68,48 @@ if (-not (Test-Path ".\config.cmd")) {
   Remove-Item $zipPath
 }
 
+if ($AsService) {
+  $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+  if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Installing the runner as a Windows service requires an elevated PowerShell session."
+  }
+
+  # The default runner location is under the current user's profile. Network Service
+  # needs read/execute permission on every parent directory to reach the runner root.
+  $runnerParent = Split-Path $RunnerRoot -Parent
+  foreach ($parentPath in @($env:USERPROFILE, $runnerParent) | Select-Object -Unique) {
+    & icacls.exe $parentPath /grant '*S-1-5-20:(RX)' | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to grant Network Service access to $parentPath."
+    }
+  }
+
+  $dockerUsersGroup = Get-LocalGroup -Name "docker-users" -ErrorAction SilentlyContinue
+  if ($dockerUsersGroup) {
+    $networkServiceSid = "S-1-5-20"
+    $hasDockerAccess = Get-LocalGroupMember -Group $dockerUsersGroup.Name -ErrorAction Stop |
+      Where-Object { $_.SID.Value -eq $networkServiceSid }
+    if (-not $hasDockerAccess) {
+      Write-Host "Granting the runner service access to Docker Desktop..." -ForegroundColor Cyan
+      Add-LocalGroupMember -Group $dockerUsersGroup.Name -Member $networkServiceSid
+      $restartServiceForDockerAccess = $true
+    }
+  }
+
+  if ((Test-Path ".\.runner") -and -not (Test-Path ".\.service")) {
+    Write-Host "Reconfiguring the existing runner as a Windows service..." -ForegroundColor Cyan
+    $removeToken = & $gh api --method POST "repos/$Repo/actions/runners/remove-token" --jq ".token"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($removeToken)) {
+      throw "Failed to create GitHub Actions runner removal token."
+    }
+
+    & .\config.cmd remove --token $removeToken
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to remove the existing runner configuration."
+    }
+  }
+}
+
 if (-not (Test-Path ".\.runner")) {
   Write-Host "Registering runner $RunnerName for $Repo..." -ForegroundColor Cyan
   $registrationToken = & $gh api --method POST "repos/$Repo/actions/runners/registration-token" --jq ".token"
@@ -74,14 +117,20 @@ if (-not (Test-Path ".\.runner")) {
     throw "Failed to create GitHub Actions runner registration token."
   }
 
-  & .\config.cmd `
-    --unattended `
-    --url "https://github.com/$Repo" `
-    --token $registrationToken `
-    --name $RunnerName `
-    --labels $RunnerLabel `
-    --work "_work" `
-    --replace
+  $configArguments = @(
+    "--unattended",
+    "--url", "https://github.com/$Repo",
+    "--token", $registrationToken,
+    "--name", $RunnerName,
+    "--labels", $RunnerLabel,
+    "--work", "_work",
+    "--replace"
+  )
+  if ($AsService) {
+    $configArguments += "--runasservice"
+  }
+
+  & .\config.cmd @configArguments
 
   if ($LASTEXITCODE -ne 0) {
     throw "Runner registration failed."
@@ -91,14 +140,17 @@ if (-not (Test-Path ".\.runner")) {
 }
 
 if ($AsService) {
-  $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-  if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Installing the runner as a Windows service requires an elevated PowerShell session."
+  $serviceName = Get-Content ".\.service" -ErrorAction Stop | Select-Object -First 1
+  $service = Get-Service -Name $serviceName -ErrorAction Stop
+  if ($restartServiceForDockerAccess -and $service.Status -eq "Running") {
+    Write-Host "Restarting runner service to apply Docker access..." -ForegroundColor Cyan
+    Restart-Service -Name $serviceName
+    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+  } elseif ($service.Status -ne "Running") {
+    Write-Host "Starting runner service..." -ForegroundColor Cyan
+    Start-Service -Name $serviceName
+    $service.WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
   }
-
-  Write-Host "Installing and starting runner service..." -ForegroundColor Cyan
-  & .\svc.cmd install
-  & .\svc.cmd start
 } else {
   Write-Host "Starting runner in this user session..." -ForegroundColor Cyan
   Start-Process -FilePath ".\run.cmd" -WorkingDirectory $RunnerRoot -WindowStyle Hidden
