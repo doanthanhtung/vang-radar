@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -15,6 +15,7 @@ import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
 const CHART_GRID = "#2a3648";
 const CHART_TEXT = "#94a3b8";
 const CHART_GOLD = "#d9b159";
+const CHART_BUY = "#38bdf8";
 
 function formatCompactPrice(value: number): string {
   return `${(value / 1_000_000).toLocaleString("vi-VN", {
@@ -62,7 +63,6 @@ function chartDomain(data: DailyGoldPrice[]): [number, number] {
 }
 
 export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
-  const [selectedMobile, setSelectedMobile] = useState<DailyGoldPrice | null>(null);
   if (history.data.length === 0) {
     return (
       <div className="py-6 text-center text-sm text-muted">
@@ -74,6 +74,8 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
   const latest = history.data[history.data.length - 1]!;
   const domain = chartDomain(history.data);
   const latestChange = formatNonZeroSignedVnd(latest.sellChangeVnd);
+  const lowest = Math.min(...history.data.map((point) => point.close));
+  const highest = Math.max(...history.data.map((point) => point.close));
   const title =
     history.data.length >= 7
       ? "Diễn biến 7 ngày gần nhất"
@@ -90,27 +92,30 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
         </span>
       </div>
 
-      <div className="mb-3 sm:mb-4">
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:mb-4 sm:grid-cols-4">
         <SummaryCard
-          label="Bán ra"
+          label="Bán ra hiện tại"
           value={formatFullPrice(latest.close)}
           meta={latestChange ?? undefined}
           tone={changeColor(latest.sellChangeVnd)}
         />
+        <SummaryCard label="Mua vào hiện tại" value={formatFullPrice(latest.buyClose)} />
+        <SummaryCard label="Thấp nhất 7N" value={formatFullPrice(lowest)} />
+        <SummaryCard label="Cao nhất 7N" value={formatFullPrice(highest)} />
       </div>
 
       <div
-        className="h-56 rounded-md border border-white/[0.06] bg-background/35 p-2 sm:h-60"
+        className="h-[22rem] rounded-md border border-white/[0.06] bg-background/35 p-2 sm:h-[30rem] sm:p-3"
         role="img"
         aria-label={`${title}. Giá bán mới nhất ${formatFullPrice(latest.close)}.`}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={history.data} margin={{ top: 10, right: 8, bottom: 4, left: 6 }}>
-            <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" vertical={false} />
+          <LineChart data={history.data} margin={{ top: 10, right: 12, bottom: 4, left: 6 }}>
+            <CartesianGrid stroke={CHART_GRID} strokeDasharray="4 6" />
             <XAxis
               dataKey="date"
               tickFormatter={shortDateLabel}
-              minTickGap={20}
+              interval={0}
               tick={{ fill: CHART_TEXT, fontSize: 11 }}
               tickLine={false}
               axisLine={{ stroke: CHART_GRID }}
@@ -128,6 +133,21 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
               content={<HistoryTooltip />}
               cursor={{ stroke: CHART_TEXT, strokeDasharray: "4 4" }}
             />
+            <Legend
+              verticalAlign="top"
+              align="right"
+              iconType="plainline"
+              wrapperStyle={{ color: CHART_TEXT, fontSize: 12, paddingBottom: 12 }}
+            />
+            <Line
+              type="monotone"
+              dataKey="buyClose"
+              name="Mua vào"
+              stroke={CHART_BUY}
+              strokeWidth={2.25}
+              dot={{ r: 3, fill: CHART_BUY, strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: CHART_BUY, strokeWidth: 0 }}
+            />
             <Line
               type="monotone"
               dataKey="close"
@@ -140,34 +160,6 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      <div className="mt-4 hidden sm:block">
-        <table className="w-full table-fixed text-left text-sm">
-          <thead className="border-y border-white/[0.08] text-muted">
-            <tr>
-              <th className="w-[42%] px-2 py-2 font-medium">Ngày</th>
-              <th className="px-2 py-2 text-right font-medium">Bán ra</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...history.data].reverse().map((point) => (
-              <HistoryRow key={point.date} point={point} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-4 sm:hidden">
-        <MobileHistoryTimeline
-          points={[...history.data].reverse()}
-          selectedDate={selectedMobile?.date ?? null}
-          onSelect={setSelectedMobile}
-        />
-      </div>
-      {selectedMobile ? (
-        <div className="mt-3 sm:hidden">
-          <HistoryTooltip point={selectedMobile} />
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -198,100 +190,6 @@ function SummaryCard({
   );
 }
 
-function HistoryRow({ point }: { point: DailyGoldPrice }) {
-  return (
-    <tr className="border-b border-white/[0.07]">
-      <td className="px-2 py-2 font-medium text-foreground">
-        {dateLabel(point.date)} {point.isToday ? <TodayBadges /> : null}
-      </td>
-      <td className="px-2 py-2 text-right">
-        <PriceWithChange price={point.close} change={point.sellChangeVnd} align="right" />
-      </td>
-    </tr>
-  );
-}
-
-function MobileHistoryTimeline({
-  points,
-  selectedDate,
-  onSelect
-}: {
-  points: DailyGoldPrice[];
-  selectedDate: string | null;
-  onSelect: (point: DailyGoldPrice) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      {points.map((point) => {
-        const selected = point.date === selectedDate;
-        return (
-          <button
-            key={point.date}
-            type="button"
-            onClick={() => onSelect(point)}
-            onMouseEnter={() => onSelect(point)}
-            aria-pressed={selected}
-            className={`w-full rounded-md border px-2.5 py-2 text-left transition-colors active:scale-[0.995] ${
-              selected
-                ? "border-gold/35 bg-gold/[0.055]"
-                : "border-white/[0.07] bg-background/25 hover:bg-white/[0.04]"
-            }`}
-          >
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-muted">
-                {point.isToday ? "Hôm nay" : dateLabel(point.date)}
-              </span>
-              <span className="text-[11px] text-slate-500">{shortDateLabel(point.date)}</span>
-            </div>
-
-            <MobilePriceBox label="Bán ra" price={point.close} change={point.sellChangeVnd} />
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function TodayBadges() {
-  return (
-    <span className="ml-1 inline-flex items-center gap-1">
-      <span className="rounded bg-gold/15 px-1.5 py-0.5 text-[11px] font-medium text-gold">
-        Hôm nay
-      </span>
-    </span>
-  );
-}
-
-function MobilePriceBox({
-  label,
-  price,
-  change
-}: {
-  label: string;
-  price: number;
-  change: number | null;
-}) {
-  const changeLabel = formatNonZeroSignedVnd(change);
-  return (
-    <div className="rounded bg-white/[0.035] px-2 py-1.5">
-      <div className="flex items-baseline justify-between gap-1.5">
-        <span className="text-[10px] font-medium text-muted">{label}</span>
-        <span className="whitespace-nowrap text-[13px] font-semibold leading-none text-foreground">
-          {formatCompactPrice(price)}
-        </span>
-      </div>
-      {changeLabel ? (
-        <div
-          className={`mt-1 whitespace-nowrap text-right text-[11px] font-semibold leading-none ${changeColor(
-            change
-          )}`}
-        >
-          {changeLabel}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 function HistoryTooltip({
   active,
   payload,
@@ -308,6 +206,17 @@ function HistoryTooltip({
       <div className="mb-2 font-semibold text-foreground">{dateLabel(point.date)}</div>
       <div className="space-y-1 text-foreground">
         <TooltipLine
+          label="Mua vào"
+          value={
+            <PriceWithChange
+              price={point.buyClose}
+              change={point.buyChangeVnd}
+              align="right"
+              compact
+            />
+          }
+        />
+        <TooltipLine
           label="Bán ra"
           value={
             <PriceWithChange
@@ -318,6 +227,20 @@ function HistoryTooltip({
             />
           }
         />
+        <TooltipLine label="Cao nhất" value={formatFullPrice(point.high)} />
+        <TooltipLine label="Thấp nhất" value={formatFullPrice(point.low)} />
+        {point.premiumPercent !== null ? (
+          <TooltipLine
+            label="Premium"
+            value={`${point.premiumPercent.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`}
+          />
+        ) : null}
+        {point.spreadPercent !== null ? (
+          <TooltipLine
+            label="Spread"
+            value={`${point.spreadPercent.toLocaleString("vi-VN", { maximumFractionDigits: 2 })}%`}
+          />
+        ) : null}
       </div>
       {point.isToday ? <p className="mt-2 text-muted">Dữ liệu hôm nay có thể thay đổi.</p> : null}
     </div>
