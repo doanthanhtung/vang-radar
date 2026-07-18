@@ -255,7 +255,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto -mt-5 max-w-7xl px-4 pb-6 pt-0">
+      <section className="relative z-10 mx-auto max-w-7xl px-4 pb-6 pt-6">
         <div className="mb-4 flex flex-col gap-1 px-1 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="text-xl font-semibold tracking-tight text-foreground">
             Bảng so sánh sản phẩm
