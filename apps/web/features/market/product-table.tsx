@@ -369,7 +369,7 @@ function ProductDetailDialog({
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={keepFocusInside}
       >
-        <div className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-3 border-b border-white/[0.07] py-4 pl-4 pr-16 sm:flex-row sm:items-start sm:justify-between sm:pr-20">
           <div className="min-w-0 pr-10 sm:pr-0">
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
               Chi tiết sản phẩm đang chọn

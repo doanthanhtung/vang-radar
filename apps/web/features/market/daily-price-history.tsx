@@ -2,7 +2,6 @@
 
 import {
   CartesianGrid,
-  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -15,7 +14,6 @@ import type { DailyGoldPrice, GoldPriceHistory } from "../../lib/api-client";
 const CHART_GRID = "#2a3648";
 const CHART_TEXT = "#94a3b8";
 const CHART_GOLD = "#d9b159";
-const CHART_BUY = "#38bdf8";
 
 function formatCompactPrice(value: number): string {
   return `${(value / 1_000_000).toLocaleString("vi-VN", {
@@ -133,21 +131,6 @@ export function DailyPriceHistory({ history }: { history: GoldPriceHistory }) {
               content={<HistoryTooltip />}
               cursor={{ stroke: CHART_TEXT, strokeDasharray: "4 4" }}
             />
-            <Legend
-              verticalAlign="top"
-              align="right"
-              iconType="plainline"
-              wrapperStyle={{ color: CHART_TEXT, fontSize: 12, paddingBottom: 12 }}
-            />
-            <Line
-              type="monotone"
-              dataKey="buyClose"
-              name="Mua vào"
-              stroke={CHART_BUY}
-              strokeWidth={2.25}
-              dot={{ r: 3, fill: CHART_BUY, strokeWidth: 0 }}
-              activeDot={{ r: 5, fill: CHART_BUY, strokeWidth: 0 }}
-            />
             <Line
               type="monotone"
               dataKey="close"
@@ -205,17 +188,6 @@ function HistoryTooltip({
     <div className="min-w-[245px] rounded-md border border-border bg-background p-3 text-xs shadow-panel">
       <div className="mb-2 font-semibold text-foreground">{dateLabel(point.date)}</div>
       <div className="space-y-1 text-foreground">
-        <TooltipLine
-          label="Mua vào"
-          value={
-            <PriceWithChange
-              price={point.buyClose}
-              change={point.buyChangeVnd}
-              align="right"
-              compact
-            />
-          }
-        />
         <TooltipLine
           label="Bán ra"
           value={
