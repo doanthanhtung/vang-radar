@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  absoluteUrl,
-  getPublicSitemapEntries,
-  getSiteUrl
-} from "./seo";
+import { absoluteUrl, getPublicSitemapEntries, getSiteUrl } from "./seo";
+import sitemap from "../app/sitemap";
 
 describe("seo", () => {
   it("defaults to production site URL", () => {
@@ -26,17 +23,32 @@ describe("seo", () => {
     }
   });
 
-  it("includes homepage and all gold product pages", () => {
+  it("includes every canonical public page exactly once", () => {
     const entries = getPublicSitemapEntries();
 
-    expect(entries[0]).toEqual({ path: "/", priority: 1 });
-    expect(entries.length).toBeGreaterThan(1);
-    expect(entries.every((entry) => entry.path === "/" || entry.path.startsWith("/gold/"))).toBe(
-      true
+    expect(entries).toEqual([
+      { path: "/" },
+      { path: "/alerts" },
+      { path: "/gold/SJC_BAR" },
+      { path: "/gold/DOJI_RING_9999" },
+      { path: "/gold/PNJ_RING_9999" },
+      { path: "/gold/BTMC_RING_9999" }
+    ]);
+    expect(new Set(entries.map((entry) => entry.path)).size).toBe(entries.length);
+  });
+
+  it("generates only absolute HTTPS URLs on the canonical host", () => {
+    const generated = sitemap();
+
+    expect(generated).toEqual(
+      getPublicSitemapEntries().map(({ path }) => ({ url: absoluteUrl(path) }))
     );
-    expect(entries.find((entry) => entry.path === "/gold/SJC_BAR")).toEqual({
-      path: "/gold/SJC_BAR",
-      priority: 0.8
-    });
+    expect(
+      generated.every(({ url }) => {
+        const parsed = new URL(url);
+        return parsed.protocol === "https:" && parsed.hostname === "vangscore.com";
+      })
+    ).toBe(true);
+    expect(generated.some(({ url }) => /\/admin|\/stack|api\./.test(url))).toBe(false);
   });
 });

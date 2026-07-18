@@ -25,12 +25,12 @@ export function absoluteUrl(path: string): string {
   return new URL(normalized, `${getSiteUrl()}/`).toString();
 }
 
-export function getPublicSitemapEntries(): Array<{ path: string; priority: number }> {
+export function getPublicSitemapEntries(): Array<{ path: string }> {
   return [
-    { path: "/", priority: 1 },
+    { path: "/" },
+    { path: "/alerts" },
     ...PRODUCT_CODES.map((code) => ({
-      path: `/gold/${code}`,
-      priority: 0.8
+      path: `/gold/${code}`
     }))
   ];
 }
