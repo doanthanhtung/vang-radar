@@ -33,12 +33,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <Link
-                  href="/"
-                  className="hidden min-h-11 items-center rounded-md px-3 text-sm font-medium text-muted transition-colors hover:bg-white/[0.05] hover:text-foreground sm:inline-flex"
-                >
-                  Bảng giá
-                </Link>
-                <Link
                   href={alertsRoute}
                   className="inline-flex min-h-11 items-center gap-2 rounded-md border border-gold/25 px-3 text-sm font-semibold text-gold transition-colors hover:border-gold/50 hover:bg-gold/10 active:translate-y-px"
                 >
