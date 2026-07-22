@@ -128,7 +128,6 @@ function getPercentStats(points: ChartPoint[], key: "premium" | "spread") {
   return {
     latest,
     median: quantile(values, 0.5),
-    p95: quantile(values, 0.95),
     percentile: percentileRank(values, latest)
   };
 }
@@ -233,7 +232,7 @@ export function MetricCharts({
       <section className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel">
         <ChartHeader
           title="Premium so với vàng thế giới"
-          description="Đường xanh là premium từng ngày; hai đường tham chiếu cho thấy mức thường gặp và vùng rất cao."
+          description="Đường xanh là premium từng ngày; đường tham chiếu cho thấy mức thường gặp."
         />
         <div
           className="h-60 px-1 pb-3 pt-2 sm:h-[320px] sm:px-4 sm:pb-4"
@@ -249,12 +248,6 @@ export function MetricCharts({
                 stroke="#e2e8f0"
                 strokeDasharray="4 4"
                 label={<ReferenceLabel value="Thường gặp" />}
-              />
-              <ReferenceLine
-                y={premiumStats.p95}
-                stroke={CHART_COLORS.premium}
-                strokeDasharray="4 4"
-                label={<ReferenceLabel value="Rất cao" />}
               />
               <XAxis
                 dataKey="dateLabel"
@@ -293,11 +286,10 @@ export function MetricCharts({
         <ChartHeader
           title="Spread mua bán"
           primary={latest.spreadAbs === null ? undefined : formatVnd(latest.spreadAbs)}
-          description="Đường cam là spread từng ngày; vùng rất cao cho biết lúc chênh lệch mua bán trở nên bất lợi."
+          description="Đường cam là spread từng ngày; đường tham chiếu cho thấy mức thường gặp."
           stats={[
             { label: "Hiện tại", value: formatPercent(latest.spread) },
-            { label: "Thường gặp", value: formatPercent(spreadStats.median) },
-            { label: "Rất cao nếu vượt", value: formatPercent(spreadStats.p95) }
+            { label: "Thường gặp", value: formatPercent(spreadStats.median) }
           ]}
         />
         <div
@@ -313,12 +305,6 @@ export function MetricCharts({
                 stroke="#e2e8f0"
                 strokeDasharray="4 4"
                 label={<ReferenceLabel value="Thường gặp" />}
-              />
-              <ReferenceLine
-                y={spreadStats.p95}
-                stroke={CHART_COLORS.spread}
-                strokeDasharray="4 4"
-                label={<ReferenceLabel value="Rất cao" />}
               />
               <XAxis
                 dataKey="dateLabel"
@@ -426,7 +412,6 @@ function HistorySummaryTable({
       current: formatPercent(premiumStats.latest),
       typical: formatPercent(premiumStats.median),
       position: `Cao hơn ${premiumStats.percentile}% số ngày`,
-      highThreshold: formatPercent(premiumStats.p95),
       difference: formatMedianDifference(premiumDifference),
       accent: premiumDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh so với vàng thế giới quy đổi"
@@ -440,7 +425,6 @@ function HistorySummaryTable({
       currentMeta: currentSpreadAmount === null ? undefined : formatPercent(spreadStats.latest),
       typical: formatPercent(spreadStats.median),
       position: `Cao hơn ${spreadStats.percentile}% số ngày`,
-      highThreshold: formatPercent(spreadStats.p95),
       difference: formatMedianDifference(spreadDifference),
       accent: spreadDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh giữa giá mua và giá bán"
@@ -487,9 +471,6 @@ function HistorySummaryTable({
                 <td className="px-5 py-4 align-top text-foreground">{row.position}</td>
                 <td className="px-5 py-4 align-top">
                   <div className="font-medium text-foreground">{row.difference}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    Rất cao nếu vượt {row.highThreshold}
-                  </div>
                 </td>
               </tr>
             ))}
@@ -527,10 +508,6 @@ function HistorySummaryTable({
               <div className="rounded-md bg-background/30 px-2 py-1.5">
                 <dt className="text-[10px] text-muted">So với lịch sử</dt>
                 <dd className="mt-1 font-medium text-foreground">{row.difference}</dd>
-              </div>
-              <div className="rounded-md bg-background/30 px-2 py-1.5">
-                <dt className="text-[10px] text-muted">Rất cao</dt>
-                <dd className="mt-1 font-medium text-foreground">Vượt {row.highThreshold}</dd>
               </div>
             </dl>
           </div>
