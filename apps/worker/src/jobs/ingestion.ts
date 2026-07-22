@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import type { DomesticGoldQuote } from "@vang-radar/domain";
+import { DojiOfficialGoldProvider } from "../providers/domestic-gold/doji-official.js";
 import { VietnamGoldApiProvider } from "../providers/domestic-gold/real-placeholders.js";
 import { FxProvider } from "../providers/fx/real-placeholders.js";
 import { FredMacroProvider } from "../providers/macro/fred.js";
@@ -29,14 +31,27 @@ async function sourceId(prisma: PrismaClient, code: string): Promise<string> {
   return source.id;
 }
 
+export function mergeDomesticGoldQuotes(
+  aggregatorQuotes: DomesticGoldQuote[],
+  officialDojiQuote: DomesticGoldQuote | null
+): DomesticGoldQuote[] {
+  if (!officialDojiQuote) return aggregatorQuotes;
+  return [
+    ...aggregatorQuotes.filter((quote) => quote.productCode !== "DOJI_RING_9999"),
+    officialDojiQuote
+  ];
+}
+
 export async function fetchDomesticGold(prisma: PrismaClient) {
   const provider = new VietnamGoldApiProvider();
   const result = await provider.fetch();
-  if (result.data.length === 0) return [];
+  const officialResult = await new DojiOfficialGoldProvider().fetch();
+  const quotes = mergeDomesticGoldQuotes(result.data, officialResult.data);
+  if (quotes.length === 0) return [];
 
   const stored = [];
 
-  for (const quote of result.data) {
+  for (const quote of quotes) {
     const sid = await sourceId(prisma, quote.sourceCode ?? result.sourceCode);
     const product = await prisma.goldProduct.findUnique({ where: { code: quote.productCode } });
     if (!product) continue;
