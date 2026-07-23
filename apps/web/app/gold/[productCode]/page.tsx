@@ -51,7 +51,6 @@ export default async function ProductPage({
     enrichProductWithLiveSignal(rawProduct, summary.world),
     metricHistory[metricHistory.length - 1]
   );
-  const quickTake = buildQuickTake(product, metricHistory);
 
   return (
     <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-8">
@@ -78,7 +77,7 @@ export default async function ProductPage({
 
       <section
         aria-label="Chỉ số hiện tại"
-        className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5"
       >
         <MetricCard title="Mua vào" value={formatVnd(product.buyPrice)} />
         <MetricCard title="Bán ra" value={formatVnd(product.sellPrice)} emphasis />
@@ -92,43 +91,12 @@ export default async function ProductPage({
           value={formatVnd(product.spreadAbsVnd)}
           meta={`${formatPercentForMeta(product.spreadPct)} giá bán`}
         />
+        <MetricCard title="Điểm tín hiệu" value={`${product.score}/100`} />
       </section>
 
-      <section className="my-4 rounded-lg border border-border bg-panel p-3 sm:my-6 sm:p-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h2 className="text-base font-semibold">Nhận định nhanh</h2>
-            <div className="mt-2 flex flex-wrap gap-2 sm:mt-3">
-              <span className="rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground">
-                Điểm tín hiệu {product.score}/100
-              </span>
-              <SignalBadge signal={product.signal} />
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5 lg:justify-end">
-            {quickTake.badges.map((badge) => (
-              <span
-                key={badge}
-                className="rounded-md border border-warning/25 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning"
-              >
-                {badge}
-              </span>
-            ))}
-          </div>
-        </div>
-        <ul className="mt-3 space-y-1.5 text-[13px] leading-5 text-muted sm:mt-4 sm:space-y-2 sm:text-sm sm:leading-6">
-          {quickTake.points.map((point) => (
-            <li
-              key={point}
-              className="relative border-t border-white/[0.06] py-2 pl-4 first:border-t-0 first:pt-0 before:absolute before:left-0 before:top-[1.05rem] before:h-1.5 before:w-1.5 before:rounded-full before:bg-gold/70 first:before:top-2"
-            >
-              {point}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <MetricChartsPanel productCode={productCode} initialData={metricHistory} />
+      <div className="mt-4 sm:mt-6">
+        <MetricChartsPanel productCode={productCode} initialData={metricHistory} />
+      </div>
     </main>
   );
 }
@@ -137,79 +105,6 @@ function toFiniteNumber(value: number | string | undefined): number | null {
   if (value === undefined) return null;
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : null;
-}
-
-function quantile(values: number[], q: number): number {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  const position = (sorted.length - 1) * q;
-  const base = Math.floor(position);
-  const rest = position - base;
-  const current = sorted[base] ?? 0;
-  const next = sorted[base + 1];
-  return next === undefined ? current : current + rest * (next - current);
-}
-
-function percentileRank(values: number[], value: number): number {
-  if (!values.length) return 0;
-  const lowerOrEqual = values.filter((item) => item <= value).length;
-  return Math.round((lowerOrEqual / values.length) * 100);
-}
-
-function formatPointDifference(value: number): string {
-  const direction = value >= 0 ? "cao hơn" : "thấp hơn";
-  return `${direction} ${Math.abs(value * 100).toLocaleString("vi-VN", {
-    maximumFractionDigits: 2
-  })} điểm %`;
-}
-
-function buildQuickTake(
-  product: ReturnType<typeof enrichProductWithLiveSignal>,
-  history: MetricPoint[]
-): { badges: string[]; points: string[] } {
-  const premiumValues = history
-    .map((point) => toFiniteNumber(point.premiumSellPct))
-    .filter((value): value is number => value !== null);
-  const spreadValues = history
-    .map((point) => toFiniteNumber(point.spreadPct))
-    .filter((value): value is number => value !== null);
-
-  if (!premiumValues.length || !spreadValues.length) {
-    return {
-      badges: ["Thiếu lịch sử"],
-      points: ["Chưa có đủ dữ liệu lịch sử để diễn giải premium và spread."]
-    };
-  }
-
-  const premiumMedian = quantile(premiumValues, 0.5);
-  const spreadMedian = quantile(spreadValues, 0.5);
-  const premiumRank = percentileRank(premiumValues, product.premiumSellPct);
-  const spreadRank = percentileRank(spreadValues, product.spreadPct);
-  const premiumDelta = product.premiumSellPct - premiumMedian;
-  const spreadDelta = product.spreadPct - spreadMedian;
-  const premiumIsHigh = premiumRank >= 80;
-  const spreadIsHigh = spreadRank >= 80;
-
-  const badges = [
-    premiumIsHigh ? "Premium cao" : "Premium bình thường",
-    spreadIsHigh ? "Spread rộng" : "Spread bình thường",
-    premiumIsHigh || spreadIsHigh ? "Mua mới bất lợi" : "Theo dõi thêm"
-  ];
-
-  return {
-    badges,
-    points: [
-      `Premium bán hiện ${formatPointDifference(
-        premiumDelta
-      )} so với mức thường gặp, cao hơn ${premiumRank}% số ngày trong lịch sử 180 ngày.`,
-      `Spread hiện là ${formatVnd(product.spreadAbsVnd)} (${formatPercentForMeta(
-        product.spreadPct
-      )}), ${formatPointDifference(spreadDelta)} so với mức thường gặp và cao hơn ${spreadRank}% số ngày.`,
-      premiumIsHigh || spreadIsHigh
-        ? "Mua mới lúc này kém hấp dẫn vì premium hoặc spread đang bất lợi so với lịch sử gần đây."
-        : "Premium và spread chưa ở vùng quá bất lợi; vẫn nên theo dõi thêm diễn biến giá thế giới và tỷ giá."
-    ]
-  };
 }
 
 function syncProductWithHistoryMetric<T extends ReturnType<typeof enrichProductWithLiveSignal>>(

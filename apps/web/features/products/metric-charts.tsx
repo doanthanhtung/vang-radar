@@ -174,7 +174,6 @@ export function MetricCharts({
       <section className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel">
         <ChartHeader
           title="Giá bán ra"
-          primary={formatVnd(latest.sell)}
           stats={[
             { label: "So với đầu kỳ", value: formatSignedVnd(priceChange) },
             { label: "Thấp nhất", value: formatVnd(priceExtent[0]) },
@@ -285,12 +284,7 @@ export function MetricCharts({
       <section className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel">
         <ChartHeader
           title="Spread mua bán"
-          primary={latest.spreadAbs === null ? undefined : formatVnd(latest.spreadAbs)}
           description="Đường cam là spread từng ngày; đường tham chiếu cho thấy mức thường gặp."
-          stats={[
-            { label: "Hiện tại", value: formatPercent(latest.spread) },
-            { label: "Thường gặp", value: formatPercent(spreadStats.median) }
-          ]}
         />
         <div
           className="h-60 px-1 pb-3 pt-2 sm:h-[300px] sm:px-4 sm:pb-4"
