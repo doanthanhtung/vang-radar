@@ -15,6 +15,7 @@ tmp-*.json
 .codegraph
 .understand-anything
 .playwright-cli
+.worktrees/
 agent-tools
 mcps
 
