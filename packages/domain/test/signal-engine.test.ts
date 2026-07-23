@@ -41,6 +41,18 @@ describe("generateDecisionSignal", () => {
     expect(result.score).toBeLessThanOrEqual(35);
   });
 
+  it("returns AVOID at the exact 4% spread safety boundary", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.1,
+      premiumPercentile180d: 50,
+      spreadPct: 0.04
+    });
+
+    expect(result.signal).toBe("AVOID");
+    expect(result.score).toBe(35);
+  });
+
   it("returns BUY_DCA for SJC when premium is extremely low, spread is normal, and world momentum is acceptable", () => {
     const result = generateDecisionSignal({
       ...baseInput,
@@ -69,6 +81,49 @@ describe("generateDecisionSignal", () => {
     });
     expect(result.signal).toBe("BUY_DCA");
     expect(result.score).toBeGreaterThanOrEqual(75);
+  });
+
+  it("adjusts BUY_DCA scores continuously as spread widens", () => {
+    const scores = [0.02, 0.025, 0.03, 0.035].map(
+      (spreadPct) =>
+        generateDecisionSignal({
+          ...baseInput,
+          productCode: "DOJI_RING_9999",
+          premiumSellPct: 0.1,
+          premiumPercentile180d: 0,
+          spreadPct,
+          xauMomentum30d: 0.01
+        }).score
+    );
+
+    expect(scores).toEqual([85, 83, 80, 74]);
+  });
+
+  it("keeps BUY_DCA above 3% spread when exceptional premium absorbs the penalty", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      productCode: "DOJI_RING_9999",
+      premiumSellPct: 0.1,
+      premiumPercentile180d: 0,
+      spreadPct: 0.039,
+      xauMomentum30d: 0.01
+    });
+
+    expect(result.signal).toBe("BUY_DCA");
+    expect(result.score).toBe(69);
+  });
+
+  it("falls back to HOLD when spread pulls the adjusted BUY_DCA score below 65", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      productCode: "DOJI_RING_9999",
+      premiumSellPct: 0.1,
+      premiumPercentile180d: 40,
+      spreadPct: 0.031,
+      xauMomentum30d: 0.01
+    });
+
+    expect(result.signal).toBe("HOLD");
   });
 
   it("returns BUY_DCA with partial history and 7d momentum fallback", () => {
@@ -155,6 +210,42 @@ describe("generateDecisionSignal", () => {
     expect(result.signal).toBe("TAKE_PROFIT");
     expect(result.score).toBeGreaterThanOrEqual(20);
     expect(result.score).toBeLessThanOrEqual(35);
+  });
+
+  it("does not treat a 3% spread below the 80th percentile as hot", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumPercentile180d: 88,
+      spreadPercentile180d: 79,
+      spreadPct: 0.03,
+      domesticMomentum7d: 0.04
+    });
+
+    expect(result.signal).toBe("HOLD");
+  });
+
+  it("treats a 3.5% absolute spread as hot for TAKE_PROFIT", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumPercentile180d: 88,
+      spreadPercentile180d: 50,
+      spreadPct: 0.035,
+      domesticMomentum7d: 0.04
+    });
+
+    expect(result.signal).toBe("TAKE_PROFIT");
+  });
+
+  it("treats the 80th spread percentile as hot for TAKE_PROFIT", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumPercentile180d: 88,
+      spreadPercentile180d: 80,
+      spreadPct: 0.03,
+      domesticMomentum7d: 0.04
+    });
+
+    expect(result.signal).toBe("TAKE_PROFIT");
   });
 
   it("returns HOLD for a normal mid-range case", () => {
@@ -287,6 +378,29 @@ describe("explainDecisionSignal", () => {
     expect(
       buyDcaRule?.conditions.find((condition) => condition.label === "Spread (mua–bán)")?.passed
     ).toBe(true);
+  });
+
+  it("explains the continuous spread adjustment and BUY_DCA score floor", () => {
+    const explanation = explainDecisionSignal({
+      ...baseInput,
+      productCode: "DOJI_RING_9999",
+      premiumSellPct: 0.1,
+      premiumPercentile180d: 0,
+      spreadPct: 0.035,
+      xauMomentum30d: 0.01
+    });
+
+    const buyDcaRule = explanation.rules.find((rule) => rule.id === "BUY_DCA");
+    expect(buyDcaRule?.matched).toBe(true);
+    expect(buyDcaRule?.score).toBe(74);
+    expect(buyDcaRule?.scoreFormula).toContain("điều chỉnh spread");
+    expect(
+      buyDcaRule?.conditions.find((condition) => condition.label === "Điểm sau điều chỉnh spread")
+    ).toMatchObject({
+      actual: "74/100",
+      requirement: "≥ 65/100",
+      passed: true
+    });
   });
 
   it("shows partial momentum lookback when fewer than 7 days are available", () => {

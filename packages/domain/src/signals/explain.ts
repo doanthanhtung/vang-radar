@@ -6,13 +6,13 @@ const IDEAL_PERCENTILE_SAMPLE_SIZE = 30;
 const VN_THRESHOLDS = {
   /** Premium bán cực đoan — hiếm khi vượt 14–15% với nhẫn 9999. */
   premiumAvoidAbsolute: 0.16,
-  /** Spread > 4% là bất lợi rõ cho người mua tích sản. */
+  /** Spread từ 4% là bất lợi rõ cho người mua tích sản. */
   spreadAvoidAbsolute: 0.04,
   /** Premium cao hơn ~88% lịch sử → tránh mua mới. */
   premiumPercentileAvoid: 88,
   /** Premium thấp hơn ~40% lịch sử → vùng mua dần hợp lý. */
   premiumPercentileBuy: 40,
-  /** Spread ≤ 3% là bình thường cho nhẫn/SJC; dùng ngưỡng tuyệt đối thay vì percentile. */
+  /** Spread 3% là điểm trung tính trước khi áp dụng phạt liên tục. */
   spreadBuyAbsolute: 0.03,
   /** Cho phép vàng thế giới giảm nhẹ (−3%) khi premium trong nước đang hấp dẫn. */
   xauMomentumBuyFloor: -0.03,
@@ -20,8 +20,8 @@ const VN_THRESHOLDS = {
   premiumPercentileTakeProfit: 82,
   domesticMomentumTakeProfit: 0.025,
   /** Spread nới rộng khi thị trường sôi động. */
-  spreadTakeProfitAbsolute: 0.028,
-  spreadPercentileTakeProfit: 75
+  spreadTakeProfitAbsolute: 0.035,
+  spreadPercentileTakeProfit: 80
 } as const;
 
 type BuyThresholds = {
@@ -210,7 +210,7 @@ function evaluateAvoidRule(
   premiumHistory: PercentileHistory
 ): SignalRuleTrace {
   const premiumTooHigh = input.premiumSellPct > VN_THRESHOLDS.premiumAvoidAbsolute;
-  const spreadTooHigh = input.spreadPct > VN_THRESHOLDS.spreadAvoidAbsolute;
+  const spreadTooHigh = input.spreadPct >= VN_THRESHOLDS.spreadAvoidAbsolute;
   const premiumPercentileTooHigh =
     premiumHistory.usable && premiumPercentile > VN_THRESHOLDS.premiumPercentileAvoid;
   const matched = premiumTooHigh || spreadTooHigh || premiumPercentileTooHigh;
@@ -247,8 +247,21 @@ function evaluateAvoidRule(
   };
 }
 
-function isSpreadAcceptableForBuy(input: SignalInput): boolean {
-  return input.spreadPct <= VN_THRESHOLDS.spreadBuyAbsolute;
+function isSpreadBelowAvoidBoundary(input: SignalInput): boolean {
+  return input.spreadPct < VN_THRESHOLDS.spreadAvoidAbsolute;
+}
+
+function calculateSpreadAdjustment(spreadPct: number): number {
+  if (spreadPct <= VN_THRESHOLDS.spreadBuyAbsolute) {
+    return Math.min(8, ((VN_THRESHOLDS.spreadBuyAbsolute - spreadPct) / 0.015) * 8);
+  }
+
+  return -Math.min(
+    12,
+    ((spreadPct - VN_THRESHOLDS.spreadBuyAbsolute) /
+      (VN_THRESHOLDS.spreadAvoidAbsolute - VN_THRESHOLDS.spreadBuyAbsolute)) *
+      12
+  );
 }
 
 function resolveBuyThresholds(productCode: SignalInput["productCode"]): BuyThresholds {
@@ -280,7 +293,7 @@ function evaluateBuyDcaRule(
 ): SignalRuleTrace {
   const buyThresholds = resolveBuyThresholds(input.productCode);
   const hasXauMomentum = xauMomentum.value !== null;
-  const spreadAcceptable = isSpreadAcceptableForBuy(input);
+  const spreadBelowAvoidBoundary = isSpreadBelowAvoidBoundary(input);
   const premiumAbsoluteAcceptable = isPremiumAbsoluteAcceptableForBuy(input, buyThresholds);
   const xauMomentumAcceptable = isXauMomentumAcceptableForBuy(xauMomentum, buyThresholds);
   const conditions: SignalConditionCheck[] = [
@@ -313,8 +326,8 @@ function evaluateBuyDcaRule(
     {
       label: "Spread (mua–bán)",
       actual: formatPercent(input.spreadPct),
-      requirement: `≤ ${formatPercent(VN_THRESHOLDS.spreadBuyAbsolute)}`,
-      passed: spreadAcceptable
+      requirement: `< ${formatPercent(VN_THRESHOLDS.spreadAvoidAbsolute)}`,
+      passed: spreadBelowAvoidBoundary
     },
     {
       label: formatXauMomentumLabel(xauMomentum.days, "không giảm mạnh"),
@@ -324,10 +337,18 @@ function evaluateBuyDcaRule(
     }
   ];
 
+  const premiumBaseScore =
+    65 + Math.min(15, (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2);
+  const spreadAdjustment = calculateSpreadAdjustment(input.spreadPct);
+  const adjustedScore = Math.max(0, Math.min(100, Math.round(premiumBaseScore + spreadAdjustment)));
+  conditions.push({
+    label: "Điểm sau điều chỉnh spread",
+    actual: `${adjustedScore}/100`,
+    requirement: "≥ 65/100",
+    passed: adjustedScore >= 65
+  });
   const matched = conditions.every((condition) => condition.passed);
-  const score = matched
-    ? Math.round(65 + Math.min(15, (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2))
-    : null;
+  const score = matched ? adjustedScore : null;
 
   return {
     id: "BUY_DCA",
@@ -336,7 +357,7 @@ function evaluateBuyDcaRule(
     matched,
     score,
     scoreFormula: matched
-      ? `Điểm = round(65 + min(15, (${buyThresholds.premiumPercentileBuy} − ${formatPercentile(premiumPercentile)}) / 2)) = ${score}`
+      ? `Điểm = round(${premiumBaseScore.toFixed(2)} + điều chỉnh spread ${spreadAdjustment.toFixed(2)}) = ${score}`
       : null,
     conditions
   };
@@ -349,7 +370,7 @@ function isSpreadHotForTakeProfit(
 ): boolean {
   return (
     input.spreadPct >= VN_THRESHOLDS.spreadTakeProfitAbsolute ||
-    (spreadHistory.usable && spreadPercentile > VN_THRESHOLDS.spreadPercentileTakeProfit)
+    (spreadHistory.usable && spreadPercentile >= VN_THRESHOLDS.spreadPercentileTakeProfit)
   );
 }
 
@@ -465,7 +486,7 @@ function buildHoldReasons(
     premiumHistory.usable &&
     premiumPercentile <= buyThresholds.premiumPercentileBuy &&
     isPremiumAbsoluteAcceptableForBuy(input, buyThresholds) &&
-    isSpreadAcceptableForBuy(input) &&
+    isSpreadBelowAvoidBoundary(input) &&
     xauMomentum.value !== null &&
     xauMomentum.value < buyThresholds.xauMomentumBuyFloor
   ) {
