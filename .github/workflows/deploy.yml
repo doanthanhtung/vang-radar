@@ -134,6 +134,102 @@ jobs:
           Wait-HttpOk -Url "http://127.0.0.1:3000"
           Wait-HttpOk -Url "http://127.0.0.1:4000/api/v1/health"
 
+      - name: Clean old application images
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        env:
+          APP_IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}/app
+          KEEP_IMAGE_COUNT: "3"
+        run: |
+          try {
+            Write-Host "Docker disk usage before application image cleanup:"
+            docker system df
+
+            $taggedImageLines = @(
+              docker image ls $env:APP_IMAGE_REPOSITORY --no-trunc --format "{{.ID}}|{{.Tag}}"
+            )
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to list application images."
+            }
+
+            $shaImageIds = @(
+              $taggedImageLines |
+                ForEach-Object {
+                  $parts = $_ -split "\|", 2
+                  if ($parts.Count -eq 2 -and $parts[1] -match "^[0-9a-f]{40}$") {
+                    $parts[0]
+                  }
+                } |
+                Sort-Object -Unique
+            )
+
+            $imageRecords = @(
+              foreach ($imageId in $shaImageIds) {
+                $created = docker image inspect $imageId --format "{{.Created}}"
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Host "::warning::Could not inspect application image $imageId; keeping it."
+                  $global:LASTEXITCODE = 0
+                  continue
+                }
+
+                [PSCustomObject]@{
+                  Id = $imageId
+                  Created = [DateTimeOffset]::Parse($created.Trim())
+                }
+              }
+            )
+
+            $runningImageIds = @(
+              docker ps --format "{{.ID}}" |
+                ForEach-Object {
+                  $runningImageId = docker inspect $_ --format "{{.Image}}"
+                  if ($LASTEXITCODE -eq 0) {
+                    $runningImageId.Trim()
+                  } else {
+                    Write-Host "::warning::Could not inspect running container $_; skipping it."
+                    $global:LASTEXITCODE = 0
+                  }
+                } |
+                Sort-Object -Unique
+            )
+
+            $keepImageIds = @(
+              $imageRecords |
+                Sort-Object Created -Descending |
+                Select-Object -First ([int]$env:KEEP_IMAGE_COUNT) |
+                ForEach-Object { $_.Id }
+              $runningImageIds
+            ) | Sort-Object -Unique
+
+            $removableImages = @(
+              $imageRecords | Where-Object { $_.Id -notin $keepImageIds }
+            )
+
+            Write-Host "Keeping $($keepImageIds.Count) application image(s); removing $($removableImages.Count) old image(s)."
+            foreach ($image in $removableImages) {
+              docker image rm --force $image.Id
+              if ($LASTEXITCODE -ne 0) {
+                Write-Host "::warning::Could not remove old application image $($image.Id)."
+                $global:LASTEXITCODE = 0
+              }
+            }
+
+            docker image prune -f
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::warning::Could not prune dangling Docker images."
+              $global:LASTEXITCODE = 0
+            }
+
+            Write-Host "Docker disk usage after application image cleanup:"
+            docker system df
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::warning::Could not read final Docker disk usage."
+            }
+          } catch {
+            Write-Host "::warning::Application image cleanup failed: $($_.Exception.Message)"
+          } finally {
+            $global:LASTEXITCODE = 0
+          }
+
       - name: Show service status
         if: ${{ always() && env.DEPLOY_IS_LATEST == 'true' }}
         env:

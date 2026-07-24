@@ -55,6 +55,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: node --test infra/scripts/deploy-image-retention.test.mjs
       - run: pnpm build
 
   build-image:
