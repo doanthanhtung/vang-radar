@@ -91,7 +91,7 @@ export async function scheduleJobs(queues: Queue[]) {
   await byName["send-buy-alerts"]?.add(
     "scheduled",
     {},
-    { repeat: { pattern: "*/15 * * * *" }, jobId: "send-buy-alerts" }
+    { repeat: { pattern: "2-57/5 * * * *" }, jobId: "send-buy-alerts" }
   );
   await byName["refresh-market-summary-cache"]?.add(
     "scheduled",

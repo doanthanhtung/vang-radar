@@ -5,22 +5,6 @@ import { createLogger } from "@vang-radar/logger";
 
 const logger = createLogger("buy-alerts");
 
-const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
-const ALERT_START_MINUTE = 8 * 60 + 30;
-const ALERT_END_MINUTE = 16 * 60 + 30;
-const MAX_PRODUCTS_PER_EMAIL = 2;
-
-const RULES = {
-  minScore: 74,
-  minConfidence: 0.9,
-  maxPremiumSellPct: 0.112,
-  maxPremiumPercentile: 25,
-  maxSpreadPct: 0.021,
-  minXauMomentum7d: -0.03,
-  minXauMomentum30d: -0.06,
-  maxDomesticMomentum7d: 0.01
-} as const;
-
 type MailerTransport = {
   sendMail(message: {
     from: string;
@@ -47,31 +31,27 @@ type AlertCandidate = {
   premiumPercentile: number | null;
   spreadPct: number;
   score: number;
-  confidence: number;
-  xauMomentum7d: number | null;
-  xauMomentum30d: number | null;
-  domesticMomentum7d: number | null;
-  level: "Mua dần" | "Cơ hội tốt";
+  transitionTime: Date;
+  level: "Mua dần";
   reasons: string[];
 };
 
 export async function sendBuyAlerts(prisma: PrismaClient) {
   const now = new Date();
-  if (!isWithinVietnamAlertWindow(now)) {
-    return { sent: 0, skipped: "outside_alert_window" };
-  }
-
   const candidates = await findAlertCandidates(prisma);
   if (candidates.length === 0) {
     return { sent: 0, skipped: "no_candidates" };
   }
 
-  const selected = candidates.slice(0, MAX_PRODUCTS_PER_EMAIL);
+  const selected = candidates;
+  const latestTransitionTime = new Date(
+    Math.max(...selected.map((candidate) => candidate.transitionTime.getTime()))
+  );
   const subscribers = await prisma.notificationSubscriber.findMany({
     where: {
       status: "active",
       buyAlertEnabled: true,
-      OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: vietnamStartOfToday(now) } }]
+      OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: latestTransitionTime } }]
     },
     orderBy: { subscribedAt: "asc" },
     select: { id: true, email: true }
@@ -121,56 +101,54 @@ async function findAlertCandidates(prisma: PrismaClient): Promise<AlertCandidate
     where: { isActive: true },
     include: {
       goldMetrics: { orderBy: { time: "desc" }, take: 1 },
-      signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+      signalSnapshots: { orderBy: { time: "desc" }, take: 2 }
     }
   });
 
+  return selectBuyDcaTransitions(products);
+}
+
+type TransitionProduct = {
+  code: string;
+  name: string;
+  brand: string;
+  goldMetrics: Array<{
+    time: Date;
+    domesticSellPriceVnd: unknown;
+    premiumSellPct: unknown;
+    premiumPercentile180d: unknown | null;
+    spreadPct: unknown;
+  }>;
+  signalSnapshots: Array<{
+    time: Date;
+    signal: string;
+    score: unknown;
+    reasons: unknown;
+  }>;
+};
+
+export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCandidate[] {
   return products
     .map((product): AlertCandidate | null => {
       const metric = product.goldMetrics[0];
-      const signal = product.signalSnapshots[0];
-      if (!metric || !signal || metric.time.getTime() !== signal.time.getTime()) return null;
-      if (signal.signal !== "BUY_DCA") return null;
-
-      const score = Number(signal.score);
-      const confidence = Number(signal.confidence);
-      const premiumSellPct = Number(metric.premiumSellPct);
-      const premiumPercentile =
-        metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d);
-      const spreadPct = Number(metric.spreadPct);
-      const xauMomentum7d = metric.xauMomentum7d === null ? null : Number(metric.xauMomentum7d);
-      const xauMomentum30d =
-        metric.xauMomentum30d === null ? null : Number(metric.xauMomentum30d);
-      const domesticMomentum7d =
-        metric.domesticMomentum7d === null ? null : Number(metric.domesticMomentum7d);
-
-      const premiumPassed =
-        premiumSellPct <= RULES.maxPremiumSellPct ||
-        (premiumPercentile !== null && premiumPercentile <= RULES.maxPremiumPercentile);
-
+      const currentSignal = product.signalSnapshots[0];
+      const previousSignal = product.signalSnapshots[1];
       if (
-        score < RULES.minScore ||
-        confidence < RULES.minConfidence ||
-        !premiumPassed ||
-        spreadPct > RULES.maxSpreadPct ||
-        xauMomentum7d === null ||
-        xauMomentum7d < RULES.minXauMomentum7d ||
-        xauMomentum30d === null ||
-        xauMomentum30d < RULES.minXauMomentum30d ||
-        domesticMomentum7d === null ||
-        domesticMomentum7d > RULES.maxDomesticMomentum7d
+        !metric ||
+        !currentSignal ||
+        !previousSignal ||
+        metric.time.getTime() !== currentSignal.time.getTime() ||
+        currentSignal.signal !== "BUY_DCA" ||
+        previousSignal.signal === "BUY_DCA"
       ) {
         return null;
       }
 
-      const level =
-        score >= 77 &&
-        premiumSellPct <= 0.108 &&
-        premiumPercentile !== null &&
-        premiumPercentile <= 15 &&
-        spreadPct <= 0.0205
-          ? "Cơ hội tốt"
-          : "Mua dần";
+      const score = Number(currentSignal.score);
+      const premiumSellPct = Number(metric.premiumSellPct);
+      const premiumPercentile =
+        metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d);
+      const spreadPct = Number(metric.spreadPct);
 
       return {
         code: product.code,
@@ -181,13 +159,10 @@ async function findAlertCandidates(prisma: PrismaClient): Promise<AlertCandidate
         premiumPercentile,
         spreadPct,
         score,
-        confidence,
-        xauMomentum7d,
-        xauMomentum30d,
-        domesticMomentum7d,
-        level,
-        reasons: Array.isArray(signal.reasons)
-          ? signal.reasons.map((reason) => String(reason)).slice(0, 3)
+        transitionTime: currentSignal.time,
+        level: "Mua dần",
+        reasons: Array.isArray(currentSignal.reasons)
+          ? currentSignal.reasons.map((reason) => String(reason)).slice(0, 3)
           : []
       };
     })
@@ -226,29 +201,15 @@ async function createTransporter(): Promise<MailerTransport | null> {
   });
 }
 
-function isWithinVietnamAlertWindow(date: Date): boolean {
-  const local = new Date(date.getTime() + VIETNAM_OFFSET_MS);
-  const minute = local.getUTCHours() * 60 + local.getUTCMinutes();
-  return minute >= ALERT_START_MINUTE && minute <= ALERT_END_MINUTE;
-}
-
-function vietnamStartOfToday(date: Date): Date {
-  const local = new Date(date.getTime() + VIETNAM_OFFSET_MS);
-  return new Date(
-    Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - VIETNAM_OFFSET_MS
-  );
-}
-
 function buildSubject(candidates: AlertCandidate[]): string {
-  const best = candidates[0];
-  return best?.level === "Cơ hội tốt"
-    ? "VangScore: Xuất hiện cơ hội mua vàng tốt"
-    : "VangScore: Có tín hiệu mua dần vàng";
+  return candidates.length > 1
+    ? `VangScore: ${candidates.length} sản phẩm vừa chuyển sang mua dần`
+    : "VangScore: Có sản phẩm vừa chuyển sang mua dần";
 }
 
 function buildText(candidates: AlertCandidate[]): string {
   const lines = [
-    "VangScore phát hiện vùng mua dần hợp lý theo dữ liệu mới nhất.",
+    "VangScore phát hiện sản phẩm vừa chuyển sang tín hiệu mua dần.",
     "",
     ...candidates.flatMap((candidate, index) => [
       `${index + 1}. ${candidate.name} (${candidate.brand})`,
@@ -300,7 +261,7 @@ function buildHtml(candidates: AlertCandidate[]): string {
               <td style="padding:28px 28px 18px;">
                 <div style="display:inline-block;padding:7px 10px;border-radius:8px;background:rgba(250,204,21,0.12);color:#facc15;font-size:13px;font-weight:700;">VangScore Alert</div>
                 <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">Có tín hiệu mua dần vàng</h1>
-                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Premium và spread đã về vùng hợp lý hơn theo dữ liệu thị trường Việt Nam hiện tại.</p>
+                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Tín hiệu mới nhất vừa chuyển sang BUY_DCA (mua dần).</p>
               </td>
             </tr>
             <tr><td style="padding:0 28px 18px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-spacing:0 12px;">${productCards}</table></td></tr>
