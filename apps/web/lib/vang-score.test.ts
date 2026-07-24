@@ -97,6 +97,7 @@ describe("buildScoreExplanation", () => {
   it("derives score from live engine output instead of stale API snapshot fields", () => {
     const explanation = buildScoreExplanation({
       ...doji,
+      premiumSellPct: 0.06,
       premiumPercentile180d: 0,
       spreadPct: 0.02,
       xauMomentum7d: -0.02,
@@ -133,7 +134,7 @@ describe("enrichProductWithLiveSignal", () => {
     buyPrice: 144_000_000,
     sellPrice: 147_000_000,
     premiumBuyPct: 0.09,
-    premiumSellPct: 0.0976,
+    premiumSellPct: 0.06,
     spreadAbsVnd: 3_000_000,
     spreadPct: 0.0204,
     signal: "HOLD",

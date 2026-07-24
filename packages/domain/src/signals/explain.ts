@@ -30,15 +30,9 @@ type BuyThresholds = {
   xauMomentumBuyFloor: number;
 };
 
-const DEFAULT_BUY_THRESHOLDS: BuyThresholds = {
-  premiumPercentileBuy: 40,
-  premiumBuyAbsolute: Number.POSITIVE_INFINITY,
-  xauMomentumBuyFloor: -0.03
-};
-
-const SJC_BUY_THRESHOLDS: BuyThresholds = {
+const BUY_THRESHOLDS: BuyThresholds = {
   premiumPercentileBuy: 10,
-  premiumBuyAbsolute: 0.05,
+  premiumBuyAbsolute: 0.06,
   xauMomentumBuyFloor: -0.08
 };
 
@@ -264,8 +258,8 @@ function calculateSpreadAdjustment(spreadPct: number): number {
   );
 }
 
-function resolveBuyThresholds(productCode: SignalInput["productCode"]): BuyThresholds {
-  return productCode === "SJC_BAR" ? SJC_BUY_THRESHOLDS : DEFAULT_BUY_THRESHOLDS;
+function resolveBuyThresholds(): BuyThresholds {
+  return BUY_THRESHOLDS;
 }
 
 function isPremiumAbsoluteAcceptableForBuy(
@@ -291,7 +285,7 @@ function evaluateBuyDcaRule(
   spreadHistory: PercentileHistory,
   xauMomentum: ResolvedMomentum
 ): SignalRuleTrace {
-  const buyThresholds = resolveBuyThresholds(input.productCode);
+  const buyThresholds = resolveBuyThresholds();
   const hasXauMomentum = xauMomentum.value !== null;
   const spreadBelowAvoidBoundary = isSpreadBelowAvoidBoundary(input);
   const premiumAbsoluteAcceptable = isPremiumAbsoluteAcceptableForBuy(input, buyThresholds);
@@ -449,7 +443,7 @@ function buildHoldScore(
   domesticMomentum7d: ResolvedMomentum
 ): number {
   let score = 50;
-  const buyThresholds = resolveBuyThresholds(input.productCode);
+  const buyThresholds = resolveBuyThresholds();
 
   if (premiumHistory.usable) {
     score += Math.min(12, (50 - premiumPercentile) * 0.24);
@@ -480,7 +474,7 @@ function buildHoldReasons(
   xauMomentum: ResolvedMomentum,
   score: number
 ): string[] {
-  const buyThresholds = resolveBuyThresholds(input.productCode);
+  const buyThresholds = resolveBuyThresholds();
 
   if (
     premiumHistory.usable &&
@@ -611,7 +605,7 @@ export function explainDecisionSignal(input: SignalInput): SignalAlgorithmExplan
     xauMomentum
   );
   if (buyDcaRule.matched) {
-    const buyThresholds = resolveBuyThresholds(input.productCode);
+    const buyThresholds = resolveBuyThresholds();
     const momentumDays = xauMomentum.days ?? 30;
     return {
       output: {

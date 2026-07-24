@@ -67,11 +67,67 @@ describe("generateDecisionSignal", () => {
     expect(result.score).toBeLessThanOrEqual(80);
   });
 
+  it.each(["SJC_BAR", "DOJI_RING_9999"] as const)(
+    "allows BUY_DCA for %s at the 10th premium percentile and 6%% absolute premium boundaries",
+    (productCode) => {
+      const result = generateDecisionSignal({
+        ...baseInput,
+        productCode,
+        premiumSellPct: 0.06,
+        premiumPercentile180d: 10,
+        spreadPct: 0.02,
+        spreadPercentile180d: 50,
+        xauMomentum30d: 0.01
+      });
+
+      expect(result.signal).toBe("BUY_DCA");
+    }
+  );
+
+  it.each(["SJC_BAR", "DOJI_RING_9999", "PNJ_RING_9999", "BTMC_RING_9999"] as const)(
+    "uses the same SJC momentum floor for %s",
+    (productCode) => {
+      const result = generateDecisionSignal({
+        ...baseInput,
+        productCode,
+        premiumSellPct: 0.06,
+        premiumPercentile180d: 10,
+        spreadPct: 0.02,
+        spreadPercentile180d: 50,
+        xauMomentum30d: -0.05
+      });
+
+      expect(result.signal).toBe("BUY_DCA");
+    }
+  );
+
+  it.each([
+    { productCode: "SJC_BAR", premiumSellPct: 0.061, premiumPercentile180d: 10 },
+    { productCode: "DOJI_RING_9999", premiumSellPct: 0.061, premiumPercentile180d: 10 },
+    { productCode: "SJC_BAR", premiumSellPct: 0.06, premiumPercentile180d: 11 },
+    { productCode: "DOJI_RING_9999", premiumSellPct: 0.06, premiumPercentile180d: 11 }
+  ] as const)(
+    "keeps $productCode on HOLD outside the shared premium buy thresholds",
+    ({ productCode, premiumSellPct, premiumPercentile180d }) => {
+      const result = generateDecisionSignal({
+        ...baseInput,
+        productCode,
+        premiumSellPct,
+        premiumPercentile180d,
+        spreadPct: 0.02,
+        spreadPercentile180d: 50,
+        xauMomentum30d: 0.01
+      });
+
+      expect(result.signal).toBe("HOLD");
+    }
+  );
+
   it("returns BUY_DCA when premium is at historic low even if world gold dips mildly", () => {
     const result = generateDecisionSignal({
       ...baseInput,
       productCode: "DOJI_RING_9999",
-      premiumSellPct: 0.0976,
+      premiumSellPct: 0.06,
       premiumPercentile180d: 0,
       spreadPct: 0.0204,
       spreadPercentile180d: 79,
@@ -89,37 +145,37 @@ describe("generateDecisionSignal", () => {
         generateDecisionSignal({
           ...baseInput,
           productCode: "DOJI_RING_9999",
-          premiumSellPct: 0.1,
+          premiumSellPct: 0.06,
           premiumPercentile180d: 0,
           spreadPct,
           xauMomentum30d: 0.01
         }).score
     );
 
-    expect(scores).toEqual([85, 83, 80, 74]);
+    expect(scores).toEqual([75, 73, 70, 60]);
   });
 
-  it("keeps BUY_DCA above 3% spread when exceptional premium absorbs the penalty", () => {
+  it("keeps BUY_DCA at 3% spread when exceptional premium absorbs the penalty", () => {
     const result = generateDecisionSignal({
       ...baseInput,
       productCode: "DOJI_RING_9999",
-      premiumSellPct: 0.1,
+      premiumSellPct: 0.06,
       premiumPercentile180d: 0,
-      spreadPct: 0.039,
+      spreadPct: 0.03,
       xauMomentum30d: 0.01
     });
 
     expect(result.signal).toBe("BUY_DCA");
-    expect(result.score).toBe(69);
+    expect(result.score).toBe(70);
   });
 
   it("falls back to HOLD when spread pulls the adjusted BUY_DCA score below 65", () => {
     const result = generateDecisionSignal({
       ...baseInput,
       productCode: "DOJI_RING_9999",
-      premiumSellPct: 0.1,
-      premiumPercentile180d: 40,
-      spreadPct: 0.031,
+      premiumSellPct: 0.06,
+      premiumPercentile180d: 0,
+      spreadPct: 0.035,
       xauMomentum30d: 0.01
     });
 
@@ -154,7 +210,7 @@ describe("generateDecisionSignal", () => {
     expect(result.signal).toBe("HOLD");
   });
 
-  it("does not return BUY_DCA when world gold drops more than 3%", () => {
+  it("does not return BUY_DCA when world gold drops more than 8%", () => {
     const result = generateDecisionSignal({
       ...baseInput,
       premiumSellPct: 0.04,
@@ -332,7 +388,7 @@ describe("explainDecisionSignal", () => {
     const explanation = explainDecisionSignal({
       ...baseInput,
       productCode: "DOJI_RING_9999",
-      premiumSellPct: 0.0976,
+      premiumSellPct: 0.06,
       premiumPercentile180d: 0,
       spreadPct: 0.0204,
       xauMomentum7d: -0.0234,
@@ -380,26 +436,26 @@ describe("explainDecisionSignal", () => {
     ).toBe(true);
   });
 
-  it("explains the continuous spread adjustment and BUY_DCA score floor", () => {
+  it("explains when the continuous spread adjustment misses the BUY_DCA score floor", () => {
     const explanation = explainDecisionSignal({
       ...baseInput,
       productCode: "DOJI_RING_9999",
-      premiumSellPct: 0.1,
+      premiumSellPct: 0.06,
       premiumPercentile180d: 0,
       spreadPct: 0.035,
       xauMomentum30d: 0.01
     });
 
     const buyDcaRule = explanation.rules.find((rule) => rule.id === "BUY_DCA");
-    expect(buyDcaRule?.matched).toBe(true);
-    expect(buyDcaRule?.score).toBe(74);
-    expect(buyDcaRule?.scoreFormula).toContain("điều chỉnh spread");
+    expect(buyDcaRule?.matched).toBe(false);
+    expect(buyDcaRule?.score).toBeNull();
+    expect(buyDcaRule?.scoreFormula).toBeNull();
     expect(
       buyDcaRule?.conditions.find((condition) => condition.label === "Điểm sau điều chỉnh spread")
     ).toMatchObject({
-      actual: "74/100",
+      actual: "64/100",
       requirement: "≥ 65/100",
-      passed: true
+      passed: false
     });
   });
 
