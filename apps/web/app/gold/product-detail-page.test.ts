@@ -9,6 +9,7 @@ describe("Product detail information hierarchy", () => {
 
     expect(source).not.toContain("Nhận định nhanh");
     expect(source).not.toContain("buildQuickTake");
+    expect(source).not.toContain("syncProductWithHistoryMetric");
     expect(source).toContain('title="Điểm tín hiệu"');
     expect(source.match(/<SignalBadge/g)).toHaveLength(1);
   });

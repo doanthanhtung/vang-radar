@@ -26,10 +26,12 @@ const MetricCharts = dynamic(() => import("./metric-charts"), {
 
 export function MetricChartsPanel({
   productCode,
-  initialData
+  initialData,
+  currentMetric
 }: {
   productCode: string;
   initialData?: MetricPoint[];
+  currentMetric: CurrentMetric;
 }) {
   const [range, setRange] = useState<HistoryRange>("180d");
   const selectedRange = RANGE_OPTIONS.find((option) => option.value === range) ?? RANGE_OPTIONS[2]!;
@@ -46,6 +48,7 @@ export function MetricChartsPanel({
       ? { initialData, initialDataUpdatedAt: Date.now() }
       : {})
   });
+  const displayedHistory = syncLatestHistoryPoint(history.data ?? [], currentMetric);
 
   return (
     <section className="space-y-3 sm:space-y-4">
@@ -78,17 +81,42 @@ export function MetricChartsPanel({
         </div>
       ) : history.isError ? (
         <ChartMessage message="Không tải được dữ liệu biểu đồ." />
-      ) : !history.data?.length ? (
+      ) : !displayedHistory.length ? (
         <ChartMessage message="Chưa có đủ dữ liệu lịch sử để vẽ biểu đồ." />
       ) : (
         <MetricCharts
-          data={history.data}
+          data={displayedHistory}
           summaryLabel={selectedRange.summaryLabel}
           expectedDays={selectedRange.expectedDays}
         />
       )}
     </section>
   );
+}
+
+type CurrentMetric = {
+  buyPrice: number;
+  sellPrice: number;
+  premiumSellPct: number;
+  spreadPct: number;
+};
+
+export function syncLatestHistoryPoint(
+  history: MetricPoint[],
+  current: CurrentMetric
+): MetricPoint[] {
+  if (history.length === 0) return history;
+  const latest = history[history.length - 1]!;
+  return [
+    ...history.slice(0, -1),
+    {
+      ...latest,
+      domesticBuyPriceVnd: current.buyPrice,
+      domesticSellPriceVnd: current.sellPrice,
+      premiumSellPct: current.premiumSellPct,
+      spreadPct: current.spreadPct
+    }
+  ];
 }
 
 function ChartSkeleton() {

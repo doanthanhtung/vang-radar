@@ -6,7 +6,7 @@ import { GOLD_PRODUCTS, PRODUCT_CODES } from "@vang-radar/domain";
 import { Card, CardContent } from "../../../components/ui/card";
 import { SignalBadge } from "../../../features/market/signal-badge";
 import { MetricChartsPanel } from "../../../features/products/metric-charts-panel";
-import { getMarketSummary, getMetricHistory, type MetricPoint } from "../../../lib/api-client";
+import { getMarketSummary, getMetricHistory } from "../../../lib/api-client";
 import { enrichProductWithLiveSignal } from "../../../lib/vang-score";
 import { createPageMetadata } from "../../../lib/seo";
 import { formatVnd } from "../../../lib/utils";
@@ -47,10 +47,7 @@ export default async function ProductPage({
   const rawProduct = summary.products.find((item) => item.code === productCode);
   if (!rawProduct) notFound();
   const metricHistory = await getMetricHistory(productCode, "180d").catch(() => []);
-  const product = syncProductWithHistoryMetric(
-    enrichProductWithLiveSignal(rawProduct, summary.world),
-    metricHistory[metricHistory.length - 1]
-  );
+  const product = enrichProductWithLiveSignal(rawProduct, summary.world);
 
   return (
     <main id="main-content" tabIndex={-1} className="mx-auto max-w-7xl px-3 py-4 sm:px-4 sm:py-8">
@@ -95,44 +92,19 @@ export default async function ProductPage({
       </section>
 
       <div className="mt-4 sm:mt-6">
-        <MetricChartsPanel productCode={productCode} initialData={metricHistory} />
+        <MetricChartsPanel
+          productCode={productCode}
+          initialData={metricHistory}
+          currentMetric={{
+            buyPrice: product.buyPrice,
+            sellPrice: product.sellPrice,
+            premiumSellPct: product.premiumSellPct,
+            spreadPct: product.spreadPct
+          }}
+        />
       </div>
     </main>
   );
-}
-
-function toFiniteNumber(value: number | string | undefined): number | null {
-  if (value === undefined) return null;
-  const numeric = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function syncProductWithHistoryMetric<T extends ReturnType<typeof enrichProductWithLiveSignal>>(
-  product: T,
-  metric: MetricPoint | undefined
-): T {
-  if (!metric) return product;
-
-  const buy = toFiniteNumber(metric.domesticBuyPriceVnd);
-  const sell = toFiniteNumber(metric.domesticSellPriceVnd);
-  const premiumSellPct = toFiniteNumber(metric.premiumSellPct);
-  const spreadPct = toFiniteNumber(metric.spreadPct);
-
-  if (buy === null || sell === null || premiumSellPct === null || spreadPct === null)
-    return product;
-
-  const impliedWorldVnd = premiumSellPct > -1 ? sell / (1 + premiumSellPct) : 0;
-  const premiumBuyPct = impliedWorldVnd > 0 ? buy / impliedWorldVnd - 1 : product.premiumBuyPct;
-
-  return {
-    ...product,
-    buyPrice: buy,
-    sellPrice: sell,
-    premiumSellPct,
-    premiumBuyPct,
-    spreadAbsVnd: sell - buy,
-    spreadPct
-  };
 }
 
 function MetricCard({
