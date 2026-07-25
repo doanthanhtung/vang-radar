@@ -258,6 +258,20 @@ function calculateSpreadAdjustment(spreadPct: number): number {
   );
 }
 
+function calculateHoldSpreadAdjustment(spreadPct: number): number {
+  if (spreadPct <= 0.025) return 3;
+  if (spreadPct <= VN_THRESHOLDS.spreadBuyAbsolute) {
+    return ((VN_THRESHOLDS.spreadBuyAbsolute - spreadPct) / 0.005) * 3;
+  }
+  if (spreadPct < VN_THRESHOLDS.spreadAvoidAbsolute) {
+    return (
+      (-5 * (spreadPct - VN_THRESHOLDS.spreadBuyAbsolute)) /
+      (VN_THRESHOLDS.spreadAvoidAbsolute - VN_THRESHOLDS.spreadBuyAbsolute)
+    );
+  }
+  return -5;
+}
+
 function resolveBuyThresholds(): BuyThresholds {
   return BUY_THRESHOLDS;
 }
@@ -449,8 +463,7 @@ function buildHoldScore(
     score += Math.min(12, (50 - premiumPercentile) * 0.24);
   }
 
-  if (input.spreadPct <= 0.025) score += 3;
-  else if (input.spreadPct > VN_THRESHOLDS.spreadBuyAbsolute) score -= 5;
+  score += calculateHoldSpreadAdjustment(input.spreadPct);
 
   if (xauMomentum.value !== null) {
     if (xauMomentum.value >= 0.01) score += 3;
@@ -464,7 +477,7 @@ function buildHoldScore(
     score -= 4;
   }
 
-  return Math.max(38, Math.min(62, Math.round(score)));
+  return Math.max(30, Math.min(70, Math.round(score)));
 }
 
 function buildHoldReasons(

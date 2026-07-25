@@ -152,7 +152,7 @@ describe("generateDecisionSignal", () => {
         }).score
     );
 
-    expect(scores).toEqual([75, 73, 70, 60]);
+    expect(scores).toEqual([75, 73, 70, 63]);
   });
 
   it("keeps BUY_DCA at 3% spread when exceptional premium absorbs the penalty", () => {
@@ -314,6 +314,33 @@ describe("generateDecisionSignal", () => {
     expect(result.signal).toBe("HOLD");
     expect(result.score).toBeGreaterThanOrEqual(45);
     expect(result.score).toBeLessThanOrEqual(65);
+  });
+
+  it("reduces HOLD scores gradually as spread rises above 3%", () => {
+    const scores = [0.03, 0.032, 0.035, 0.039].map((spreadPct) =>
+      generateDecisionSignal({
+        ...baseInput,
+        premiumSellPct: 0.1,
+        premiumPercentile180d: 50,
+        spreadPct,
+        domesticMomentum7d: 0.01
+      }).score
+    );
+
+    expect(scores).toEqual([53, 52, 51, 49]);
+  });
+
+  it("preserves a strong HOLD premium advantage instead of capping it at 62", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.1,
+      premiumPercentile180d: 0,
+      spreadPct: 0.02,
+      domesticMomentum7d: 0.01
+    });
+
+    expect(result.signal).toBe("HOLD");
+    expect(result.score).toBe(68);
   });
 });
 
