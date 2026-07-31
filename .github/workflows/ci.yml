@@ -56,7 +56,9 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: node --test infra/scripts/deploy-image-retention.test.mjs
-      - run: pnpm build
+      - name: Build monorepo outside image
+        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+        run: pnpm build
 
   build-image:
     name: Build production image

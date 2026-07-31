@@ -10,10 +10,13 @@ ENV CI=true \
 RUN apk add --no-cache openssl && corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
+
+RUN pnpm fetch --prod=false
+
 COPY apps ./apps
 COPY packages ./packages
 
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --offline --frozen-lockfile --prod=false
 
 ARG NEXT_PUBLIC_API_BASE_URL=https://api.vangscore.com/api/v1
 ARG PUBLIC_API_BASE_URL=http://api:4000/api/v1

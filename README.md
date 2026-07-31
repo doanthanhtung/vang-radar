@@ -112,6 +112,10 @@ docker compose -f infra/docker-compose.home-server.yml up -d
 
 The compose file binds Web and API to `127.0.0.1` on the host and lets the `cloudflared` container publish the web service. The web container calls the API through Docker's internal network at `http://api:4000/api/v1`.
 
+### Production deploy timing
+
+GitHub Actions reports production deployment as separate phases: image pull, migration, seed, service recreation, and health checks. Migration and seed remain mandatory before application services are recreated. Production always deploys the commit-SHA image, while the three newest application images are retained for rollback.
+
 ## Verification
 
 ```bash

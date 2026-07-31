@@ -1,6 +1,6 @@
 # Safe Deploy Optimization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Shorten the main-branch production path without weakening verification, database setup, health checks, stale-deploy protection, or rollback-image retention.
 
@@ -23,14 +23,16 @@
 ### Task 1: Lock the safety invariants with workflow tests
 
 **Files:**
+
 - Modify: `infra/scripts/deploy-image-retention.test.mjs`
 - Test: `infra/scripts/deploy-image-retention.test.mjs`
 
 **Interfaces:**
+
 - Consumes: workflow text from `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`, and `Dockerfile`.
 - Produces: regression assertions that later tasks must satisfy.
 
-- [ ] **Step 1: Add failing assertions for conditional builds and cache structure**
+- [x] **Step 1: Add failing assertions for conditional builds and cache structure**
 
 Add file reads for CI and Dockerfile, then add these tests:
 
@@ -58,7 +60,7 @@ test("Docker dependency downloads are cached independently of source", () => {
 });
 ```
 
-- [ ] **Step 2: Add failing assertions for ordered deploy phases**
+- [x] **Step 2: Add failing assertions for ordered deploy phases**
 
 ```js
 test("production deploy keeps database setup ahead of service recreation", () => {
@@ -84,13 +86,13 @@ test("failed health checks emit service logs", () => {
 });
 ```
 
-- [ ] **Step 3: Run the workflow tests and verify they fail for the new requirements**
+- [x] **Step 3: Run the workflow tests and verify they fail for the new requirements**
 
 Run: `node --test infra/scripts/deploy-image-retention.test.mjs`
 
 Expected: existing retention test passes; new tests fail because the CI condition, Docker fetch structure, and split deploy steps do not exist yet.
 
-- [ ] **Step 4: Commit the red tests**
+- [x] **Step 4: Commit the red tests**
 
 ```powershell
 git add infra/scripts/deploy-image-retention.test.mjs
@@ -100,14 +102,16 @@ git commit -m "test: lock safe deploy optimization invariants"
 ### Task 2: Cache Docker dependency downloads across source changes
 
 **Files:**
+
 - Modify: `Dockerfile`
 - Test: `infra/scripts/deploy-image-retention.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `pnpm-lock.yaml`, root workspace metadata, BuildKit GHA cache.
 - Produces: an application image with the same web/API/worker/Prisma build outputs and a source-independent dependency-fetch layer.
 
-- [ ] **Step 1: Replace the source-before-install sequence**
+- [x] **Step 1: Replace the source-before-install sequence**
 
 Change the Dockerfile build sequence to:
 
@@ -124,13 +128,13 @@ RUN pnpm install --offline --frozen-lockfile --prod=false
 
 Keep the existing `pnpm db:generate && pnpm build`, build arguments, runtime environment, ports, and command unchanged.
 
-- [ ] **Step 2: Run the focused workflow tests**
+- [x] **Step 2: Run the focused workflow tests**
 
 Run: `node --test infra/scripts/deploy-image-retention.test.mjs`
 
 Expected: Docker cache test passes; CI and deploy-phase tests remain red.
 
-- [ ] **Step 3: Build the production image locally**
+- [x] **Step 3: Build the production image locally**
 
 Run:
 
@@ -144,13 +148,13 @@ docker build --tag vang-radar:safe-deploy-test `
 
 Expected: image build completes successfully, including Prisma generation and all Turborepo builds.
 
-- [ ] **Step 4: Rebuild and inspect cache reuse**
+- [x] **Step 4: Rebuild and inspect cache reuse**
 
 Run the same `docker build` command again.
 
 Expected: `pnpm fetch`, offline install, Prisma generation, and build layers report `CACHED` when inputs are unchanged.
 
-- [ ] **Step 5: Commit the Docker cache change**
+- [x] **Step 5: Commit the Docker cache change**
 
 ```powershell
 git add Dockerfile
@@ -160,32 +164,34 @@ git commit -m "build: cache Docker dependency downloads"
 ### Task 3: Eliminate the duplicate main-branch production build
 
 **Files:**
+
 - Modify: `.github/workflows/ci.yml`
 - Test: `infra/scripts/deploy-image-retention.test.mjs`
 
 **Interfaces:**
+
 - Consumes: GitHub event name and ref.
 - Produces: standalone build verification for PR/manual runs and exactly one production build for main pushes.
 
-- [ ] **Step 1: Make the standalone build event-aware**
+- [x] **Step 1: Make the standalone build event-aware**
 
 Replace the unnamed final build command with:
 
 ```yaml
-      - name: Build monorepo outside image
-        if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
-        run: pnpm build
+- name: Build monorepo outside image
+  if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+  run: pnpm build
 ```
 
 Do not change `build-image.needs: verify`, its main-push condition, BuildKit cache, image tags, or push behavior.
 
-- [ ] **Step 2: Run the focused workflow tests**
+- [x] **Step 2: Run the focused workflow tests**
 
 Run: `node --test infra/scripts/deploy-image-retention.test.mjs`
 
 Expected: conditional-build and Docker cache tests pass; deploy-phase tests remain red.
 
-- [ ] **Step 3: Review event behavior explicitly**
+- [x] **Step 3: Review event behavior explicitly**
 
 Confirm from `.github/workflows/ci.yml`:
 
@@ -197,7 +203,7 @@ push main          -> verify skips standalone build; build-image performs Docker
 
 Expected: every event that can complete without a Docker image still receives standalone build verification.
 
-- [ ] **Step 4: Commit the CI build change**
+- [x] **Step 4: Commit the CI build change**
 
 ```powershell
 git add .github/workflows/ci.yml
@@ -207,74 +213,76 @@ git commit -m "ci: avoid duplicate main branch build"
 ### Task 4: Split production deployment into observable fail-fast phases
 
 **Files:**
+
 - Modify: `.github/workflows/deploy.yml`
 - Test: `infra/scripts/deploy-image-retention.test.mjs`
 
 **Interfaces:**
+
 - Consumes: `IMAGE_TAG`, `PRODUCTION_ENV`, GHCR credentials, production Compose file.
 - Produces: ordered GitHub Actions steps for data services, pull, migration, seed, recreation, health, and cleanup.
 
-- [ ] **Step 1: Add a shared production image environment variable**
+- [x] **Step 1: Add a shared production image environment variable**
 
 At job level, add:
 
 ```yaml
-    env:
-      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
-      APP_IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.event.workflow_run.head_sha || github.sha }}
-      COMPOSE_FILE: infra/docker-compose.home-server.yml
+env:
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+  APP_IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.event.workflow_run.head_sha || github.sha }}
+  COMPOSE_FILE: infra/docker-compose.home-server.yml
 ```
 
 Remove repeated step-local `IMAGE_TAG` declarations and repeated assignments to `$env:APP_IMAGE`.
 
-- [ ] **Step 2: Split data-service startup and image pull**
+- [x] **Step 2: Split data-service startup and image pull**
 
 Replace the combined deploy step with:
 
 ```yaml
-      - name: Start production data services
-        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        run: |
-          docker compose --profile tunnel -f $env:COMPOSE_FILE up -d postgres redis
-          if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
+- name: Start production data services
+  if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+  run: |
+    docker compose --profile tunnel -f $env:COMPOSE_FILE up -d postgres redis
+    if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
 
-      - name: Pull production image
-        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        run: |
-          Write-Host "Pulling image $env:APP_IMAGE"
-          docker compose --profile tunnel -f $env:COMPOSE_FILE pull app-setup api worker web
-          if ($LASTEXITCODE -ne 0) { throw "Failed to pull production image." }
+- name: Pull production image
+  if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+  run: |
+    Write-Host "Pulling image $env:APP_IMAGE"
+    docker compose --profile tunnel -f $env:COMPOSE_FILE pull app-setup api worker web
+    if ($LASTEXITCODE -ne 0) { throw "Failed to pull production image." }
 ```
 
-- [ ] **Step 3: Split mandatory migration and seed**
+- [x] **Step 3: Split mandatory migration and seed**
 
 ```yaml
-      - name: Run production migrations
-        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        run: |
-          docker compose -f $env:COMPOSE_FILE run --rm -T app-setup sh -c "pnpm db:generate && pnpm --filter @vang-radar/db exec prisma migrate deploy"
-          if ($LASTEXITCODE -ne 0) { throw "Production migration failed." }
+- name: Run production migrations
+  if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+  run: |
+    docker compose -f $env:COMPOSE_FILE run --rm -T app-setup sh -c "pnpm db:generate && pnpm --filter @vang-radar/db exec prisma migrate deploy"
+    if ($LASTEXITCODE -ne 0) { throw "Production migration failed." }
 
-      - name: Seed production reference data
-        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        run: |
-          docker compose -f $env:COMPOSE_FILE run --rm -T app-setup pnpm db:seed
-          if ($LASTEXITCODE -ne 0) { throw "Production seed failed." }
+- name: Seed production reference data
+  if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+  run: |
+    docker compose -f $env:COMPOSE_FILE run --rm -T app-setup pnpm db:seed
+    if ($LASTEXITCODE -ne 0) { throw "Production seed failed." }
 ```
 
 Seed remains mandatory and occurs before application recreation.
 
-- [ ] **Step 4: Add the separately named recreation step**
+- [x] **Step 4: Add the separately named recreation step**
 
 ```yaml
-      - name: Recreate production services
-        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        run: |
-          docker compose --profile tunnel -f $env:COMPOSE_FILE up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
-          if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
+- name: Recreate production services
+  if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+  run: |
+    docker compose --profile tunnel -f $env:COMPOSE_FILE up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
+    if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
 ```
 
-- [ ] **Step 5: Make health-check failures print service logs**
+- [x] **Step 5: Make health-check failures print service logs**
 
 Wrap the two `Wait-HttpOk` calls in:
 
@@ -289,17 +297,17 @@ try {
 }
 ```
 
-- [ ] **Step 6: Use the shared Compose path in cleanup/status steps**
+- [x] **Step 6: Use the shared Compose path in cleanup/status steps**
 
 Replace literal `infra/docker-compose.home-server.yml` references in the remaining deploy job with `$env:COMPOSE_FILE`. Keep cleanup best-effort, keep `KEEP_IMAGE_COUNT: "3"`, and keep the final status step under `always()`.
 
-- [ ] **Step 7: Run the workflow regression tests**
+- [x] **Step 7: Run the workflow regression tests**
 
 Run: `node --test infra/scripts/deploy-image-retention.test.mjs`
 
 Expected: all tests pass, including phase order, health logs, image retention, and running-image protection.
 
-- [ ] **Step 8: Commit the observable deployment phases**
+- [x] **Step 8: Commit the observable deployment phases**
 
 ```powershell
 git add .github/workflows/deploy.yml infra/scripts/deploy-image-retention.test.mjs
@@ -309,15 +317,17 @@ git commit -m "ci: expose safe production deploy phases"
 ### Task 5: Final verification and operational handoff
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-07-31-safe-deploy-optimization.md`
 - Test: `infra/scripts/deploy-image-retention.test.mjs`
 
 **Interfaces:**
+
 - Consumes: completed workflow, Dockerfile, and local production image.
 - Produces: verified implementation and operator guidance for interpreting deployment timing.
 
-- [ ] **Step 1: Document the deployment phases**
+- [x] **Step 1: Document the deployment phases**
 
 Add a short README subsection under home-server deployment:
 
@@ -327,13 +337,13 @@ Add a short README subsection under home-server deployment:
 GitHub Actions reports production deployment as separate phases: image pull, migration, seed, service recreation, and health checks. Migration and seed remain mandatory before application services are recreated. Production always deploys the commit-SHA image, while the three newest application images are retained for rollback.
 ```
 
-- [ ] **Step 2: Run focused workflow tests**
+- [x] **Step 2: Run focused workflow tests**
 
 Run: `node --test infra/scripts/deploy-image-retention.test.mjs`
 
 Expected: all tests pass.
 
-- [ ] **Step 3: Run repository verification**
+- [x] **Step 3: Run repository verification**
 
 Run:
 
@@ -345,13 +355,13 @@ pnpm test
 
 Expected: all commands pass with PostgreSQL and Redis available for API smoke tests.
 
-- [ ] **Step 4: Rebuild the final Docker image**
+- [x] **Step 4: Rebuild the final Docker image**
 
 Run the Task 2 `docker build` command once more.
 
 Expected: build succeeds; unchanged dependency-fetch layer is cached.
 
-- [ ] **Step 5: Inspect the complete diff**
+- [x] **Step 5: Inspect the complete diff**
 
 Run:
 
@@ -362,7 +372,7 @@ git status --short
 
 Expected: no whitespace errors; only unrelated pre-existing user changes remain unstaged.
 
-- [ ] **Step 6: Commit documentation and plan completion**
+- [x] **Step 6: Commit documentation and plan completion**
 
 Mark completed plan checkboxes, then run:
 
@@ -371,6 +381,6 @@ git add README.md docs/superpowers/plans/2026-07-31-safe-deploy-optimization.md
 git commit -m "docs: explain production deploy timing"
 ```
 
-- [ ] **Step 7: Report the production-only verification boundary**
+- [x] **Step 7: Report the production-only verification boundary**
 
 State explicitly that local tests validate workflow structure and image construction, while actual GHCR transfer time and self-hosted production timings will be available only after the next successful `main` deployment. Do not claim a measured production speedup before that run.

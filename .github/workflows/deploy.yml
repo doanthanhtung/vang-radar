@@ -23,6 +23,10 @@ jobs:
     defaults:
       run:
         shell: powershell
+    env:
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+      APP_IMAGE: ghcr.io/${{ github.repository }}/app:${{ github.event.workflow_run.head_sha || github.sha }}
+      COMPOSE_FILE: infra/docker-compose.home-server.yml
 
     steps:
       - name: Check out repository
@@ -80,38 +84,40 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME || github.actor }}
           password: ${{ secrets.GHCR_TOKEN || github.token }}
 
-      - name: Pull, migrate, seed, and start services
+      - name: Start production data services
         if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        env:
-          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          $composeFile = "infra/docker-compose.home-server.yml"
-          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
-          Write-Host "Deploying image $env:APP_IMAGE"
-
-          docker compose --profile tunnel -f $composeFile up -d postgres redis
+          docker compose --profile tunnel -f $env:COMPOSE_FILE up -d postgres redis
           if ($LASTEXITCODE -ne 0) { throw "Failed to start data services." }
 
-          docker compose --profile tunnel -f $composeFile pull app-setup api worker web
+      - name: Pull production image
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        run: |
+          Write-Host "Pulling image $env:APP_IMAGE"
+          docker compose --profile tunnel -f $env:COMPOSE_FILE pull app-setup api worker web
           if ($LASTEXITCODE -ne 0) { throw "Failed to pull production image." }
 
-          docker compose -f $composeFile run --rm -T app-setup
-          if ($LASTEXITCODE -ne 0) {
-            $setupExitCode = $LASTEXITCODE
-            docker compose -f $composeFile logs --tail 120 app-setup
-            throw "App setup failed with exit code $setupExitCode."
-          }
+      - name: Run production migrations
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        run: |
+          docker compose -f $env:COMPOSE_FILE run --rm -T app-setup sh -c "pnpm db:generate && pnpm --filter @vang-radar/db exec prisma migrate deploy"
+          if ($LASTEXITCODE -ne 0) { throw "Production migration failed." }
 
-          docker compose --profile tunnel -f $composeFile up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
+      - name: Seed production reference data
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        run: |
+          docker compose -f $env:COMPOSE_FILE run --rm -T app-setup pnpm db:seed
+          if ($LASTEXITCODE -ne 0) { throw "Production seed failed." }
+
+      - name: Recreate production services
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        run: |
+          docker compose --profile tunnel -f $env:COMPOSE_FILE up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
           if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
 
       - name: Health check
         if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
-        env:
-          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
-
           function Wait-HttpOk {
             param(
               [Parameter(Mandatory = $true)][string]$Url,
@@ -131,8 +137,14 @@ jobs:
             throw "$Url did not become ready."
           }
 
-          Wait-HttpOk -Url "http://127.0.0.1:3000"
-          Wait-HttpOk -Url "http://127.0.0.1:4000/api/v1/health"
+          try {
+            Wait-HttpOk -Url "http://127.0.0.1:3000"
+            Wait-HttpOk -Url "http://127.0.0.1:4000/api/v1/health"
+          } catch {
+            docker compose --profile tunnel -f $env:COMPOSE_FILE ps
+            docker compose --profile tunnel -f $env:COMPOSE_FILE logs --tail 120 api worker web cloudflared
+            throw
+          }
 
       - name: Clean old application images
         if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
@@ -232,8 +244,5 @@ jobs:
 
       - name: Show service status
         if: ${{ always() && env.DEPLOY_IS_LATEST == 'true' }}
-        env:
-          IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
-          $env:APP_IMAGE = "ghcr.io/${{ github.repository }}/app:$env:IMAGE_TAG"
-          docker compose --profile tunnel -f infra/docker-compose.home-server.yml ps
+          docker compose --profile tunnel -f $env:COMPOSE_FILE ps
