@@ -5,9 +5,12 @@ node_modules
 dist
 coverage
 *.tsbuildinfo
+__pycache__/
+.pytest_cache/
 .env
 *.log
 output
+research/backtest/outputs/
 terminals
 tmp-*.json
 
