@@ -175,4 +175,118 @@ describe("MarketService", () => {
     expect(plan?.status).toBe("READY");
     expect(plan?.suggestedExposurePct).toBeGreaterThan(0);
   });
+
+  it("starts independent latest-summary reads before any one database read completes", async () => {
+    type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+    const deferred = <T>(): Deferred<T> => {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((accept) => {
+        resolve = accept;
+      });
+      return { promise, resolve };
+    };
+    const fx = deferred<{ rate: number; time: Date }>();
+    const world = deferred<{ priceUsdPerOz: number; time: Date }>();
+    const dxy = deferred<null>();
+    const products = deferred<
+      Array<{
+        id: string;
+        code: string;
+        name: string;
+        brand: string;
+        goldMetrics: Array<{
+          time: Date;
+          domesticBuyPriceVnd: number;
+          domesticSellPriceVnd: number;
+          xauUsdPerOz: number;
+          usdVnd: number;
+          worldVndPerLuong: number;
+          premiumBuyPct: number;
+          premiumSellPct: number;
+          spreadAbsVnd: number;
+          spreadPct: number;
+          premiumPercentile180d: null;
+          spreadPercentile180d: null;
+          xauMomentum7d: null;
+          xauMomentum30d: null;
+          xauMomentum7dDays: null;
+          xauMomentum30dDays: null;
+          domesticMomentum7d: null;
+          domesticMomentum7dDays: null;
+        }>;
+        signalSnapshots: [];
+      }>
+    >();
+    const calls: string[] = [];
+    const time = new Date("2026-08-04T00:00:00Z");
+    let fxCalls = 0;
+    let worldCalls = 0;
+    const prisma = {
+      fxRate: {
+        findFirst: () =>
+          ++fxCalls === 1
+            ? Promise.resolve({ rate: 26_000, time, source: { code: "FX" } })
+            : (calls.push("fx"), fx.promise)
+      },
+      worldGoldPrice: {
+        findFirst: () =>
+          ++worldCalls === 1
+            ? Promise.resolve({ priceUsdPerOz: 2_400, time, source: { code: "WORLD" } })
+            : (calls.push("world"), world.promise)
+      },
+      macroIndicator: { findFirst: () => (calls.push("dxy"), dxy.promise) },
+      goldProduct: { findMany: () => (calls.push("products"), products.promise) },
+      domesticGoldPrice: { findFirst: async () => ({ source: { code: "DOMESTIC" } }) },
+      goldMetric: { count: async () => 0, findFirst: async () => null }
+    };
+    const service = new MarketService(
+      prisma as never,
+      {
+        getJson: async () => null,
+        setJson: async () => undefined
+      } as never
+    );
+
+    const summary = service.getSummary();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(calls).toEqual(["fx", "world", "dxy", "products"]);
+
+    fx.resolve({ rate: 26_000, time });
+    world.resolve({ priceUsdPerOz: 2_400, time });
+    dxy.resolve(null);
+    products.resolve([
+      {
+        id: "sjc",
+        code: "SJC_BAR",
+        name: "Vàng miếng SJC",
+        brand: "SJC",
+        goldMetrics: [
+          {
+            time,
+            domesticBuyPriceVnd: 140_000_000,
+            domesticSellPriceVnd: 143_000_000,
+            xauUsdPerOz: 2_400,
+            usdVnd: 26_000,
+            worldVndPerLuong: 75_000_000,
+            premiumBuyPct: 0.1,
+            premiumSellPct: 0.12,
+            spreadAbsVnd: 3_000_000,
+            spreadPct: 0.021,
+            premiumPercentile180d: null,
+            spreadPercentile180d: null,
+            xauMomentum7d: null,
+            xauMomentum30d: null,
+            xauMomentum7dDays: null,
+            xauMomentum30dDays: null,
+            domesticMomentum7d: null,
+            domesticMomentum7dDays: null
+          }
+        ],
+        signalSnapshots: []
+      }
+    ]);
+
+    await expect(summary).resolves.toMatchObject({ products: [{ code: "SJC_BAR" }] });
+  });
 });

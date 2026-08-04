@@ -1,15 +1,10 @@
 import type { DecisionSignal } from "@vang-radar/domain";
 
 const serverBaseUrl = process.env.PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
-const browserBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.PUBLIC_API_BASE_URL ?? serverBaseUrl;
 
 function getBaseUrl(): string {
   if (typeof window === "undefined") return serverBaseUrl;
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return "/api/v1";
-  }
-  return browserBaseUrl;
+  return "/api/v1";
 }
 
 export interface MarketSummaryProduct {
@@ -159,7 +154,7 @@ export function getApiUrl(path: string): string {
 }
 
 export async function getMarketSummary(): Promise<MarketSummary> {
-  return fetchApi<MarketSummary>("/market/summary", { cache: "no-store" });
+  return fetchApi<MarketSummary>("/market/summary", { next: { revalidate: 60 } });
 }
 
 export async function getWorldGoldHistory(days: 7 | 30): Promise<WorldGoldHistoryPoint[]> {

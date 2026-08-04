@@ -10,7 +10,6 @@ export const metadata = createPageMetadata({
 });
 
 export const revalidate = 60;
-export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const fallback: MarketSummary = {

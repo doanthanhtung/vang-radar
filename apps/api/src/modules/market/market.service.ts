@@ -253,39 +253,41 @@ export class MarketService {
     const cached = await this.redis.getJson<MarketSummary>(cacheKey);
     if (cached && !hasUnreasonableSummary(cached)) return cached;
 
-    const latestFx = await this.prisma.fxRate.findFirst({
-      where: {
-        isValid: true,
-        pair: "USDVND",
-        rate: { gte: 20_000, lte: 40_000 },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const latestWorld = await this.prisma.worldGoldPrice.findFirst({
-      where: {
-        isValid: true,
-        symbol: "XAUUSD",
-        priceUsdPerOz: { gt: 100 },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const latestDxy = await this.prisma.macroIndicator.findFirst({
-      where: { code: "DXY", isValid: true, value: { gt: 0 } },
-      orderBy: { time: "desc" },
-      select: { value: true }
-    });
-    const products = await this.prisma.goldProduct
-      .findMany({
-        where: { isActive: true },
-        include: {
-          goldMetrics: { orderBy: { time: "desc" }, take: 1 },
-          signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+    const [latestFx, latestWorld, latestDxy, products] = await Promise.all([
+      this.prisma.fxRate.findFirst({
+        where: {
+          isValid: true,
+          pair: "USDVND",
+          rate: { gte: 20_000, lte: 40_000 },
+          source: { code: { not: { startsWith: "MOCK_" } } }
         },
-        orderBy: { code: "asc" }
-      })
-      .catch(() => []);
+        orderBy: { time: "desc" }
+      }),
+      this.prisma.worldGoldPrice.findFirst({
+        where: {
+          isValid: true,
+          symbol: "XAUUSD",
+          priceUsdPerOz: { gt: 100 },
+          source: { code: { not: { startsWith: "MOCK_" } } }
+        },
+        orderBy: { time: "desc" }
+      }),
+      this.prisma.macroIndicator.findFirst({
+        where: { code: "DXY", isValid: true, value: { gt: 0 } },
+        orderBy: { time: "desc" },
+        select: { value: true }
+      }),
+      this.prisma.goldProduct
+        .findMany({
+          where: { isActive: true },
+          include: {
+            goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+            signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+          },
+          orderBy: { code: "asc" }
+        })
+        .catch(() => [])
+    ]);
 
     const previousDayCutoff = vietnamStartOfToday();
     const since180d = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
