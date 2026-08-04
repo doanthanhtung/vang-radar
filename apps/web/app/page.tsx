@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { LiveMarketDashboard } from "../features/market/live-market-dashboard";
 import { getMarketSummary, type MarketSummary } from "../lib/api-client";
 import { createPageMetadata } from "../lib/seo";
@@ -10,6 +11,11 @@ export const metadata = createPageMetadata({
 });
 
 export const revalidate = 60;
+export const dynamic = "force-dynamic";
+
+const getCachedMarketSummary = unstable_cache(getMarketSummary, ["market-summary"], {
+  revalidate: 60
+});
 
 export default async function HomePage() {
   const fallback: MarketSummary = {
@@ -18,6 +24,6 @@ export default async function HomePage() {
     macro: { dxy: null },
     products: []
   };
-  const summary = await getMarketSummary().catch(() => fallback);
+  const summary = await getCachedMarketSummary().catch(() => fallback);
   return <LiveMarketDashboard initialSummary={summary} />;
 }

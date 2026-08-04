@@ -16,6 +16,7 @@ type SummaryLike = {
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const HISTORY_CACHE_TTL_SECONDS = 60;
+const SUMMARY_CACHE_TTL_SECONDS = 60;
 const DRAWDOWN_PLAN_WINDOW_DAYS = 252;
 const DRAWDOWN_PLAN_QUERY_ROWS = 20_000;
 const DRAWDOWN_PLAN_LEVELS = [0.03, 0.05, 0.07, 0.1] as const;
@@ -467,7 +468,7 @@ export class MarketService {
         .filter((product): product is MarketSummaryProduct => product !== null)
     };
 
-    await this.redis.setJson(cacheKey, summary, 300);
+    await this.redis.setJson(cacheKey, summary, SUMMARY_CACHE_TTL_SECONDS);
     return summary;
   }
 

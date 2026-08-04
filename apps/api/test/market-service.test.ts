@@ -66,9 +66,12 @@ describe("MarketService", () => {
         ]
       }
     };
+    const cacheWrites: Array<{ key: string; ttl: number }> = [];
     const redis = {
       getJson: async () => ({ products: [{ premiumSellPct: 1102.1388 }] }),
-      setJson: async () => undefined
+      setJson: async (key: string, _value: unknown, ttl: number) => {
+        cacheWrites.push({ key, ttl });
+      }
     };
     const service = new MarketService(prisma as never, redis as never);
 
@@ -81,6 +84,7 @@ describe("MarketService", () => {
       sellPriceVnd: 149_000_000
     });
     expect(summary.products[0]?.experimentalDrawdownPlan).toBeUndefined();
+    expect(cacheWrites[0]?.ttl).toBe(60);
   });
 
   it("adds the experimental drawdown plan only when the feature flag is enabled", async () => {
