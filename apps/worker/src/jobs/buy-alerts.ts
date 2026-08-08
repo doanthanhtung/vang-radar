@@ -24,6 +24,7 @@ type NodemailerModule = {
 };
 
 type AlertCandidate = {
+  eventId?: string;
   code: string;
   name: string;
   brand: string;
@@ -37,40 +38,54 @@ type AlertCandidate = {
   reasons: string[];
 };
 
+export type AlertEventBaseline = {
+  score: number;
+  premiumSellPct: number;
+  episode: number;
+};
+
+export type AlertEventSelection = AlertCandidate & {
+  type: "ENTERED_BUY_DCA" | "BUY_DCA_IMPROVED";
+  episode: number;
+  fingerprint: string;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_GAP_MS = 8 * 60 * 60 * 1000;
+
 export async function sendBuyAlerts(prisma: PrismaClient) {
   const now = new Date();
-  const candidates = await findAlertCandidates(prisma);
-  if (candidates.length === 0) {
-    return { sent: 0, skipped: "no_candidates" };
-  }
-
-  const selected = candidates;
-  const latestTransitionTime = new Date(
-    Math.max(...selected.map((candidate) => candidate.transitionTime.getTime()))
-  );
+  const pending = await findPendingAlertEvents(prisma, now);
+  if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
   const subscribers = await prisma.notificationSubscriber.findMany({
-    where: {
-      status: "active",
-      buyAlertEnabled: true,
-      OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: latestTransitionTime } }]
-    },
+    where: { status: "active", buyAlertEnabled: true },
     orderBy: { subscribedAt: "asc" },
     select: { id: true, email: true, unsubscribeVersion: true }
   });
-
-  if (subscribers.length === 0) {
-    return { sent: 0, skipped: "no_eligible_subscribers", candidates: selected.length };
-  }
+  if (subscribers.length === 0) return { sent: 0, skipped: "no_eligible_subscribers", candidates: pending.length };
 
   const transporter = await createTransporter();
   if (!transporter) {
-    return { sent: 0, skipped: "email_not_configured", candidates: selected.length };
+    return { sent: 0, skipped: "email_not_configured", candidates: pending.length };
   }
 
   const config = loadConfig();
   let sent = 0;
   for (const subscriber of subscribers) {
     try {
+      const deliveries = await prisma.buyAlertDelivery.findMany({
+        where: { subscriberId: subscriber.id, sentAt: { gte: new Date(now.getTime() - DAY_MS) } },
+        orderBy: { sentAt: "desc" },
+        select: { sentAt: true }
+      });
+      if (!canDispatchNotification(deliveries.map((delivery) => delivery.sentAt), now)) continue;
+      const delivered = await prisma.buyAlertDelivery.findMany({
+        where: { subscriberId: subscriber.id, eventId: { in: pending.map((candidate) => candidate.eventId!) } },
+        select: { eventId: true }
+      });
+      const deliveredIds = new Set(delivered.map((delivery) => delivery.eventId));
+      const selected = pending.filter((candidate) => candidate.eventId && !deliveredIds.has(candidate.eventId));
+      if (selected.length === 0) continue;
       const headers = buildUnsubscribeHeaders(subscriber);
       await transporter.sendMail({
         from: `"VangScore" <${config.EMAIL_SENDER}>`,
@@ -80,13 +95,11 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
         html: buildHtml(selected),
         ...(headers ? { headers } : {})
       });
-      await prisma.notificationSubscriber.update({
-        where: { id: subscriber.id },
-        data: {
-          lastNotifiedAt: now,
-          notificationCount: { increment: 1 }
-        }
+      await prisma.buyAlertDelivery.createMany({
+        data: selected.map((candidate) => ({ eventId: candidate.eventId!, subscriberId: subscriber.id, sentAt: now })),
+        skipDuplicates: true
       });
+      await prisma.notificationSubscriber.update({ where: { id: subscriber.id }, data: { lastNotifiedAt: now, notificationCount: { increment: 1 } } });
       sent += 1;
     } catch (error) {
       logger.error(
@@ -96,7 +109,14 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
     }
   }
 
-  return { sent, candidates: selected.length };
+  return { sent, candidates: pending.length };
+}
+
+export function canDispatchNotification(sentAt: Date[], now: Date): boolean {
+  const recent = sentAt.filter((date) => now.getTime() - date.getTime() < DAY_MS);
+  if (recent.length >= 2) return false;
+  const latest = recent.sort((left, right) => right.getTime() - left.getTime())[0];
+  return !latest || now.getTime() - latest.getTime() >= MIN_GAP_MS;
 }
 
 function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: number }): Record<string, string> | undefined {
@@ -112,18 +132,6 @@ function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: n
     "List-Unsubscribe": `<${baseUrl}/notifications/unsubscribe/${token}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
   };
-}
-
-async function findAlertCandidates(prisma: PrismaClient): Promise<AlertCandidate[]> {
-  const products = await prisma.goldProduct.findMany({
-    where: { isActive: true },
-    include: {
-      goldMetrics: { orderBy: { time: "desc" }, take: 1 },
-      signalSnapshots: { orderBy: { time: "desc" }, take: 2 }
-    }
-  });
-
-  return selectBuyDcaTransitions(products);
 }
 
 type TransitionProduct = {
@@ -192,6 +200,74 @@ export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCan
       if (left.spreadPct !== right.spreadPct) return left.spreadPct - right.spreadPct;
       return right.score - left.score;
     });
+}
+
+async function findPendingAlertEvents(prisma: PrismaClient, now: Date): Promise<AlertCandidate[]> {
+  const products = await prisma.goldProduct.findMany({
+    where: { isActive: true },
+    include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 2 } }
+  });
+  for (const product of products) {
+    const previous = await prisma.buyAlertEvent.findFirst({ where: { productId: product.id }, orderBy: { occurredAt: "desc" }, select: { episode: true, score: true, premiumSellPct: true } });
+    const selection = selectBuyDcaAlertEvent(product, previous ? { episode: previous.episode, score: Number(previous.score), premiumSellPct: Number(previous.premiumSellPct) } : null);
+    if (!selection) continue;
+    await prisma.buyAlertEvent.upsert({
+      where: { fingerprint: selection.fingerprint },
+      update: {},
+      create: { productId: product.id, episode: selection.episode, type: selection.type, fingerprint: selection.fingerprint, occurredAt: selection.transitionTime, score: selection.score, premiumSellPct: selection.premiumSellPct, spreadPct: selection.spreadPct, sellPriceVnd: selection.sellPrice, reasons: selection.reasons }
+    });
+  }
+  const events = await prisma.buyAlertEvent.findMany({
+    where: { occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
+    include: { product: { include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 1 } } } }, orderBy: { occurredAt: "asc" }
+  });
+  return events.filter((event) => {
+    const metric = event.product.goldMetrics[0];
+    const signal = event.product.signalSnapshots[0];
+    return metric && signal && signal.signal === "BUY_DCA" && metric.time.getTime() === signal.time.getTime() && now.getTime() - metric.time.getTime() <= 15 * 60 * 1000;
+  }).map((event) => ({ eventId: event.id, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần", reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+}
+
+export function selectBuyDcaAlertEvent(
+  product: TransitionProduct,
+  baseline: AlertEventBaseline | null
+): AlertEventSelection | null {
+  const metric = product.goldMetrics[0];
+  const currentSignal = product.signalSnapshots[0];
+  if (!metric || !currentSignal || currentSignal.signal !== "BUY_DCA" || metric.time.getTime() !== currentSignal.time.getTime()) return null;
+  const candidate: AlertCandidate = {
+    code: product.code,
+    name: product.name,
+    brand: product.brand,
+    sellPrice: Number(metric.domesticSellPriceVnd),
+    premiumSellPct: Number(metric.premiumSellPct),
+    premiumPercentile: metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d),
+    spreadPct: Number(metric.spreadPct),
+    score: Number(currentSignal.score),
+    transitionTime: currentSignal.time,
+    level: "Mua dần",
+    reasons: Array.isArray(currentSignal.reasons) ? currentSignal.reasons.map(String).slice(0, 3) : []
+  };
+
+  const isTransition = product.signalSnapshots[1]?.signal !== "BUY_DCA";
+  if (!baseline || isTransition) {
+    return {
+      ...candidate,
+      type: "ENTERED_BUY_DCA",
+      episode: isTransition ? (baseline?.episode ?? 0) + 1 : baseline?.episode ?? 1,
+      fingerprint: `${product.code}:episode:${isTransition ? (baseline?.episode ?? 0) + 1 : baseline?.episode ?? 1}:${isTransition ? candidate.transitionTime.toISOString() : "bootstrap"}`
+    };
+  }
+
+  if (candidate.score < baseline.score + 3 && candidate.premiumSellPct > baseline.premiumSellPct - 0.005) {
+    return null;
+  }
+  return {
+    ...candidate,
+    type: "BUY_DCA_IMPROVED",
+    episode: baseline.episode,
+    fingerprint: `${product.code}:episode:${baseline.episode}:improved:${candidate.transitionTime.toISOString()}`
+  };
 }
 
 async function createTransporter(): Promise<MailerTransport | null> {

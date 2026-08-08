@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selectBuyDcaTransitions } from "../src/jobs/buy-alerts.js";
+import {
+  canDispatchNotification,
+  selectBuyDcaAlertEvent,
+  selectBuyDcaTransitions
+} from "../src/jobs/buy-alerts.js";
 
 function productWithSignals(current: string, previous: string) {
   const currentTime = new Date("2026-07-24T08:00:00.000Z");
@@ -50,5 +54,48 @@ describe("selectBuyDcaTransitions", () => {
     ["HOLD", "HOLD"]
   ])("does not select an unchanged or non-buy signal (%s after %s)", (current, previous) => {
     expect(selectBuyDcaTransitions([productWithSignals(current, previous)])).toEqual([]);
+  });
+});
+
+describe("selectBuyDcaAlertEvent", () => {
+  it("creates an entry event for a fresh BUY_DCA transition", () => {
+    const event = selectBuyDcaAlertEvent(productWithSignals("BUY_DCA", "HOLD"), null);
+    expect(event?.type).toBe("ENTERED_BUY_DCA");
+  });
+
+  it("creates one bootstrap event when BUY_DCA has no prior event", () => {
+    const event = selectBuyDcaAlertEvent(productWithSignals("BUY_DCA", "BUY_DCA"), null);
+    expect(event?.type).toBe("ENTERED_BUY_DCA");
+    expect(event?.fingerprint).toContain("bootstrap");
+  });
+
+  it("creates an improvement event only after score or premium moves materially", () => {
+    const product = productWithSignals("BUY_DCA", "BUY_DCA");
+    const baseline = { score: 65, premiumSellPct: 0.51, episode: 1 };
+    expect(selectBuyDcaAlertEvent(product, baseline)?.type).toBe("BUY_DCA_IMPROVED");
+  });
+
+  it("does not create an improvement event for a small change", () => {
+    const product = productWithSignals("BUY_DCA", "BUY_DCA");
+    const baseline = { score: 70, premiumSellPct: 0.5, episode: 1 };
+    expect(selectBuyDcaAlertEvent(product, baseline)).toBeNull();
+  });
+});
+
+describe("canDispatchNotification", () => {
+  const now = new Date("2026-08-08T12:00:00.000Z");
+
+  it("allows the first and second email when they are at least eight hours apart", () => {
+    expect(canDispatchNotification([], now)).toBe(true);
+    expect(canDispatchNotification([new Date("2026-08-07T12:00:00.000Z")], now)).toBe(true);
+  });
+
+  it("blocks a third email inside the trailing 24-hour window", () => {
+    expect(
+      canDispatchNotification(
+        [new Date("2026-08-08T01:00:00.000Z"), new Date("2026-08-07T13:00:00.000Z")],
+        now
+      )
+    ).toBe(false);
   });
 });
