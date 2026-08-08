@@ -16,6 +16,7 @@ type SummaryLike = {
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const HISTORY_CACHE_TTL_SECONDS = 60;
+const SUMMARY_CACHE_TTL_SECONDS = 60;
 const DRAWDOWN_PLAN_WINDOW_DAYS = 252;
 const DRAWDOWN_PLAN_QUERY_ROWS = 20_000;
 const DRAWDOWN_PLAN_LEVELS = [0.03, 0.05, 0.07, 0.1] as const;
@@ -238,6 +239,12 @@ export class MarketService {
     @Inject(RedisService) private readonly redis: RedisService
   ) {}
 
+  private async getSnapshotValue<T>(suffix: string): Promise<T | null> {
+    const pointer = await this.redis.getJson<{ snapshotId?: unknown }>("market:snapshot:current");
+    if (typeof pointer?.snapshotId !== "string") return null;
+    return this.redis.getJson<T>(`market:snapshot:${pointer.snapshotId}:${suffix}`);
+  }
+
   async getSummary(): Promise<MarketSummary> {
     if (await hasMockLatestInputs(this.prisma)) {
       return {
@@ -248,44 +255,49 @@ export class MarketService {
       };
     }
 
+    const snapshot = await this.getSnapshotValue<MarketSummary>("summary");
+    if (snapshot && !hasUnreasonableSummary(snapshot)) return snapshot;
+
     const experimentalDrawdownPlanEnabled = isExperimentalDrawdownPlanEnabled();
     const cacheKey = `market:summary:latest:v7:drawdown-plan:${experimentalDrawdownPlanEnabled ? "on" : "off"}`;
     const cached = await this.redis.getJson<MarketSummary>(cacheKey);
     if (cached && !hasUnreasonableSummary(cached)) return cached;
 
-    const latestFx = await this.prisma.fxRate.findFirst({
-      where: {
-        isValid: true,
-        pair: "USDVND",
-        rate: { gte: 20_000, lte: 40_000 },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const latestWorld = await this.prisma.worldGoldPrice.findFirst({
-      where: {
-        isValid: true,
-        symbol: "XAUUSD",
-        priceUsdPerOz: { gt: 100 },
-        source: { code: { not: { startsWith: "MOCK_" } } }
-      },
-      orderBy: { time: "desc" }
-    });
-    const latestDxy = await this.prisma.macroIndicator.findFirst({
-      where: { code: "DXY", isValid: true, value: { gt: 0 } },
-      orderBy: { time: "desc" },
-      select: { value: true }
-    });
-    const products = await this.prisma.goldProduct
-      .findMany({
-        where: { isActive: true },
-        include: {
-          goldMetrics: { orderBy: { time: "desc" }, take: 1 },
-          signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+    const [latestFx, latestWorld, latestDxy, products] = await Promise.all([
+      this.prisma.fxRate.findFirst({
+        where: {
+          isValid: true,
+          pair: "USDVND",
+          rate: { gte: 20_000, lte: 40_000 },
+          source: { code: { not: { startsWith: "MOCK_" } } }
         },
-        orderBy: { code: "asc" }
-      })
-      .catch(() => []);
+        orderBy: { time: "desc" }
+      }),
+      this.prisma.worldGoldPrice.findFirst({
+        where: {
+          isValid: true,
+          symbol: "XAUUSD",
+          priceUsdPerOz: { gt: 100 },
+          source: { code: { not: { startsWith: "MOCK_" } } }
+        },
+        orderBy: { time: "desc" }
+      }),
+      this.prisma.macroIndicator.findFirst({
+        where: { code: "DXY", isValid: true, value: { gt: 0 } },
+        orderBy: { time: "desc" },
+        select: { value: true }
+      }),
+      this.prisma.goldProduct
+        .findMany({
+          where: { isActive: true },
+          include: {
+            goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+            signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+          },
+          orderBy: { code: "asc" }
+        })
+        .catch(() => [])
+    ]);
 
     const previousDayCutoff = vietnamStartOfToday();
     const since180d = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
@@ -465,11 +477,15 @@ export class MarketService {
         .filter((product): product is MarketSummaryProduct => product !== null)
     };
 
-    await this.redis.setJson(cacheKey, summary, 300);
+    await this.redis.setJson(cacheKey, summary, SUMMARY_CACHE_TTL_SECONDS);
     return summary;
   }
 
   async getWorldGoldHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; price: number }>>(
+      `market:world-gold:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:world-gold:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; price: number }>>(cacheKey);
     if (cached) return cached;
@@ -493,6 +509,10 @@ export class MarketService {
   }
 
   async getUsdVndHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; rate: number }>>(
+      `market:usd-vnd:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:usd-vnd:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; rate: number }>>(cacheKey);
     if (cached) return cached;
@@ -520,6 +540,10 @@ export class MarketService {
   }
 
   async getDxyHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; value: number }>>(
+      `market:dxy:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:dxy:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; value: number }>>(cacheKey);
     if (cached) return cached;

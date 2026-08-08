@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Clock3, Database, Gauge, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
@@ -42,7 +42,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   >({});
   const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
   const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
-  const prefetchedFactorKeyRef = useRef<string | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
 
@@ -171,28 +170,6 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     },
     [fetchFactorHistory]
   );
-
-  useEffect(() => {
-    const prefetchKey = todayKey;
-    if (!isDataReady || prefetchedFactorKeyRef.current === prefetchKey) {
-      return;
-    }
-
-    prefetchedFactorKeyRef.current = prefetchKey;
-    const timeout = window.setTimeout(() => {
-      const factors: ExpandedFactor[] = ["xau", "usd", "dxy"];
-      void Promise.allSettled(
-        factors.map(async (factor) => {
-          const points = await fetchFactorHistory(factor);
-          setFactorHistory((current) =>
-            current[factor] ? current : { ...current, [factor]: points }
-          );
-        })
-      );
-    }, 900);
-
-    return () => window.clearTimeout(timeout);
-  }, [fetchFactorHistory, isDataReady, todayKey]);
 
   const toggleFactor = (factor: ExpandedFactor) => {
     const next = expandedFactor === factor ? null : factor;

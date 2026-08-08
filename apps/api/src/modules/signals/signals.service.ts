@@ -11,6 +11,14 @@ export class SignalsService {
   ) {}
 
   async getLatest(productCode: ProductCode) {
+    const pointer = await this.redis.getJson<{ snapshotId?: unknown }>("market:snapshot:current");
+    if (typeof pointer?.snapshotId === "string") {
+      const snapshot = await this.redis.getJson(
+        `market:snapshot:${pointer.snapshotId}:product:${productCode}:signal`
+      );
+      if (snapshot) return snapshot;
+    }
+
     const cached = await this.redis.getJson(`product:${productCode}:signal:latest`);
     if (cached) return cached;
 
