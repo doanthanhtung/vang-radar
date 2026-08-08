@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import type { MetricPoint } from "../../lib/api-client";
 import { formatNumber, formatPercent, formatVnd } from "../../lib/utils";
+import { groupMetricHistoryByVietnameseDay } from "./metric-history-stats";
 
 type ChartPoint = {
   time: string;
@@ -141,7 +142,9 @@ export function MetricCharts({
   summaryLabel: string;
   expectedDays: number;
 }) {
-  const points = data.map(toPoint).filter((point): point is ChartPoint => point !== null);
+  const points = groupMetricHistoryByVietnameseDay(data)
+    .map(toPoint)
+    .filter((point): point is ChartPoint => point !== null);
   const latest = points[points.length - 1];
 
   if (!latest) {
@@ -405,7 +408,7 @@ function HistorySummaryTable({
       label: "Premium",
       current: formatPercent(premiumStats.latest),
       typical: formatPercent(premiumStats.median),
-      position: `Cao hơn ${premiumStats.percentile}% số ngày`,
+      position: `Cao hơn ${premiumStats.percentile}% số ngày (${days}/${expectedDays} ngày)`,
       difference: formatMedianDifference(premiumDifference),
       accent: premiumDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh so với vàng thế giới quy đổi"
@@ -418,7 +421,7 @@ function HistorySummaryTable({
           : formatVnd(currentSpreadAmount),
       currentMeta: currentSpreadAmount === null ? undefined : formatPercent(spreadStats.latest),
       typical: formatPercent(spreadStats.median),
-      position: `Cao hơn ${spreadStats.percentile}% số ngày`,
+      position: `Cao hơn ${spreadStats.percentile}% số ngày (${days}/${expectedDays} ngày)`,
       difference: formatMedianDifference(spreadDifference),
       accent: spreadDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh giữa giá mua và giá bán"
