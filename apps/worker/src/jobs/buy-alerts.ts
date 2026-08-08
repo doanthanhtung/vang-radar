@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
-import { loadConfig } from "@vang-radar/config";
+import { createUnsubscribeToken, loadConfig } from "@vang-radar/config";
 import { DISCLAIMER } from "@vang-radar/domain";
 import { createLogger } from "@vang-radar/logger";
 
@@ -12,6 +12,7 @@ type MailerTransport = {
     subject: string;
     text: string;
     html: string;
+    headers?: Record<string, string>;
   }): Promise<unknown>;
 };
 
@@ -54,7 +55,7 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
       OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: latestTransitionTime } }]
     },
     orderBy: { subscribedAt: "asc" },
-    select: { id: true, email: true }
+    select: { id: true, email: true, unsubscribeVersion: true }
   });
 
   if (subscribers.length === 0) {
@@ -70,12 +71,14 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
   let sent = 0;
   for (const subscriber of subscribers) {
     try {
+      const headers = buildUnsubscribeHeaders(subscriber);
       await transporter.sendMail({
         from: `"VangScore" <${config.EMAIL_SENDER}>`,
         to: subscriber.email,
         subject: buildSubject(selected),
         text: buildText(selected),
-        html: buildHtml(selected)
+        html: buildHtml(selected),
+        ...(headers ? { headers } : {})
       });
       await prisma.notificationSubscriber.update({
         where: { id: subscriber.id },
@@ -94,6 +97,21 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
   }
 
   return { sent, candidates: selected.length };
+}
+
+function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: number }): Record<string, string> | undefined {
+  const config = loadConfig();
+  if (!config.EMAIL_UNSUBSCRIBE_SECRET) return undefined;
+  const token = createUnsubscribeToken({
+    subscriberId: subscriber.id,
+    version: subscriber.unsubscribeVersion,
+    secret: config.EMAIL_UNSUBSCRIBE_SECRET
+  });
+  const baseUrl = config.PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  return {
+    "List-Unsubscribe": `<${baseUrl}/notifications/unsubscribe/${token}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+  };
 }
 
 async function findAlertCandidates(prisma: PrismaClient): Promise<AlertCandidate[]> {

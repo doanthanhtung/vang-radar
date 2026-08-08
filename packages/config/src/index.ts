@@ -25,6 +25,7 @@ const envSchema = z.object({
   ADMIN_PASSWORD: z.string().min(1).default("change_me"),
   EMAIL_SENDER: z.string().email().optional(),
   EMAIL_PASSWORD: z.string().optional(),
+  EMAIL_UNSUBSCRIBE_SECRET: z.string().min(32).optional(),
   EMAIL_RECEIVERS: z
     .string()
     .default("")
@@ -45,6 +46,8 @@ export type AppConfig = z.infer<typeof envSchema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return envSchema.parse(env);
 }
+
+export { createUnsubscribeToken, verifyUnsubscribeToken } from "./unsubscribe-token.js";
 
 export const publicCacheControl = "public, s-maxage=60, stale-while-revalidate=300";
 export const noStoreCacheControl = "no-store, no-cache, must-revalidate, proxy-revalidate";

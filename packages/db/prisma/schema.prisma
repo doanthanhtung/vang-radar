@@ -251,6 +251,7 @@ model NotificationSubscriber {
   unsubscribedAt     DateTime? @map("unsubscribed_at") @db.Timestamptz
   lastNotifiedAt     DateTime? @map("last_notified_at") @db.Timestamptz
   notificationCount  Int       @default(0) @map("notification_count")
+  unsubscribeVersion Int       @default(1) @map("unsubscribe_version")
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 

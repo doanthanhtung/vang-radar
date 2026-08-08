@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Inject, Post, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, HttpCode, Inject, Param, Post, UseInterceptors } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { NoStoreCacheControlInterceptor } from "../../common/cache-control.interceptor.js";
 import {
@@ -18,5 +18,11 @@ export class NotificationsController {
   @HttpCode(201)
   subscribe(@Body() body: SubscribeRequest) {
     return this.notificationsService.subscribe(body);
+  }
+
+  @Post("unsubscribe/:token")
+  @HttpCode(204)
+  unsubscribe(@Param("token") token: string) {
+    return this.notificationsService.unsubscribe(token);
   }
 }

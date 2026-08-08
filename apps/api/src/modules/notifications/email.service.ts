@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { loadConfig } from "@vang-radar/config";
+import { createUnsubscribeToken, loadConfig } from "@vang-radar/config";
 
 type MailerTransport = {
   sendMail(message: {
@@ -8,6 +8,7 @@ type MailerTransport = {
     subject: string;
     text: string;
     html: string;
+    headers?: Record<string, string>;
   }): Promise<unknown>;
 };
 
@@ -22,7 +23,7 @@ type NodemailerModule = {
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
-  async sendSubscriptionConfirmation(email: string): Promise<boolean> {
+  async sendSubscriptionConfirmation(subscriber: { id: string; email: string; unsubscribeVersion: number }): Promise<boolean> {
     const config = loadConfig();
     if (!config.EMAIL_SENDER || !config.EMAIL_PASSWORD) {
       this.logger.warn("Email SMTP credentials are not configured");
@@ -47,23 +48,36 @@ export class EmailService {
         }
       });
 
+      const headers = buildUnsubscribeHeaders(subscriber);
       await transporter.sendMail({
         from: `"VangScore" <${config.EMAIL_SENDER}>`,
-        to: email,
+        to: subscriber.email,
         subject: "Bạn đã đăng ký nhận cảnh báo mua vàng từ VangScore",
         text: buildConfirmationText(),
-        html: buildConfirmationHtml()
+        html: buildConfirmationHtml(),
+        ...(headers ? { headers } : {})
       });
 
       return true;
     } catch (error) {
       this.logger.error(
-        `Unable to send subscription confirmation to ${email}`,
+        `Unable to send subscription confirmation to ${subscriber.email}`,
         error instanceof Error ? error.stack : undefined
       );
       return false;
     }
   }
+}
+
+function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: number }): Record<string, string> | undefined {
+  const config = loadConfig();
+  if (!config.EMAIL_UNSUBSCRIBE_SECRET) return undefined;
+  const token = createUnsubscribeToken({ subscriberId: subscriber.id, version: subscriber.unsubscribeVersion, secret: config.EMAIL_UNSUBSCRIBE_SECRET });
+  const baseUrl = config.PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  return {
+    "List-Unsubscribe": `<${baseUrl}/notifications/unsubscribe/${token}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+  };
 }
 
 function buildConfirmationText(): string {

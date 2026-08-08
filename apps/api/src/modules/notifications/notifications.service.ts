@@ -1,5 +1,6 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { loadConfig, verifyUnsubscribeToken } from "@vang-radar/config";
 import { PrismaService } from "../../common/prisma.service.js";
 import { EmailService } from "./email.service.js";
 
@@ -21,10 +22,12 @@ export class NotificationsService {
     const existingSubscriber = await this.prisma.notificationSubscriber.findUnique({
       where: { email },
       select: {
+        id: true,
         email: true,
         status: true,
         buyAlertEnabled: true,
-        subscribedAt: true
+        subscribedAt: true,
+        unsubscribeVersion: true
       }
     });
 
@@ -41,7 +44,7 @@ export class NotificationsService {
 
     if (existingSubscriber) {
       const subscriber = await this.activateSubscriber(email);
-      const confirmationEmailSent = await this.emailService.sendSubscriptionConfirmation(email);
+      const confirmationEmailSent = await this.emailService.sendSubscriptionConfirmation(subscriber);
       return {
         email: subscriber.email,
         status: subscriber.status,
@@ -56,7 +59,7 @@ export class NotificationsService {
     const subscriber = result.subscriber;
     const confirmationEmailSent = result.alreadySubscribed
       ? false
-      : await this.emailService.sendSubscriptionConfirmation(email);
+      : await this.emailService.sendSubscriptionConfirmation(subscriber);
 
     return {
       email: subscriber.email,
@@ -76,13 +79,16 @@ export class NotificationsService {
         buyAlertEnabled: true,
         unsubscribedAt: null,
         subscribedAt: new Date(),
-        source: "web"
+        source: "web",
+        unsubscribeVersion: { increment: 1 }
       },
       select: {
+        id: true,
         email: true,
         status: true,
         buyAlertEnabled: true,
-        subscribedAt: true
+        subscribedAt: true,
+        unsubscribeVersion: true
       }
     });
   }
@@ -96,11 +102,13 @@ export class NotificationsService {
           buyAlertEnabled: true,
           source: "web"
         },
-        select: {
-          email: true,
+      select: {
+        id: true,
+        email: true,
           status: true,
           buyAlertEnabled: true,
-          subscribedAt: true
+        subscribedAt: true,
+        unsubscribeVersion: true
         }
       });
       return { subscriber, alreadySubscribed: false };
@@ -111,6 +119,23 @@ export class NotificationsService {
       }
       throw error;
     }
+  }
+
+  async unsubscribe(token: string): Promise<void> {
+    const secret = loadConfig().EMAIL_UNSUBSCRIBE_SECRET;
+    if (!secret) throw new NotFoundException();
+    const payload = verifyUnsubscribeToken(token, secret);
+    if (!payload) throw new NotFoundException();
+
+    await this.prisma.notificationSubscriber.updateMany({
+      where: {
+        id: payload.subscriberId,
+        unsubscribeVersion: payload.version,
+        status: "active",
+        buyAlertEnabled: true
+      },
+      data: { status: "unsubscribed", buyAlertEnabled: false, unsubscribedAt: new Date() }
+    });
   }
 
   private normalizeEmail(value: unknown): string {
