@@ -117,6 +117,7 @@ describe("publishMarketSnapshot", () => {
       products: [{ code: "SJC_BAR", score: 55 }]
     });
     expect(JSON.parse(redis.values.get("market:snapshot:current")!.value)).toEqual({ snapshotId });
+    expect(redis.values.get("market:snapshot:current")!.ttl).toBe(24 * 60 * 60);
     expect(redis.transactions[0]!.at(-1)).toBe("market:snapshot:current");
   });
 

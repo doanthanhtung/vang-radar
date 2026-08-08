@@ -3,7 +3,7 @@ import type { Redis } from "ioredis";
 import { calculateSpreadPct, calculateWorldVndPerLuong } from "@vang-radar/domain";
 
 const SNAPSHOT_POINTER_KEY = "market:snapshot:current";
-const SNAPSHOT_TTL_SECONDS = 15 * 60;
+const SNAPSHOT_TTL_SECONDS = 24 * 60 * 60;
 const HISTORY_RANGES = ["7d", "30d", "180d", "1y"] as const;
 const MARKET_HISTORY_DAYS = [7, 30] as const;
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
