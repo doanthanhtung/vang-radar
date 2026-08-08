@@ -448,7 +448,7 @@ function HistorySummaryTable({
               <th className="w-[16%] px-5 py-3 font-medium">Hiện tại</th>
               <th className="w-[18%] px-5 py-3 font-medium">Mức thường gặp</th>
               <th className="w-[22%] px-5 py-3 font-medium">Vị trí lịch sử</th>
-              <th className="w-[26%] px-5 py-3 font-medium">So với lịch sử</th>
+              <th className="w-[26%] px-5 py-3 font-medium">So với mức thường gặp</th>
             </tr>
           </thead>
           <tbody>
@@ -503,7 +503,7 @@ function HistorySummaryTable({
                 <dd className="mt-1 font-medium text-foreground">{row.position}</dd>
               </div>
               <div className="rounded-md bg-background/30 px-2 py-1.5">
-                <dt className="text-[10px] text-muted">So với lịch sử</dt>
+                <dt className="text-[10px] text-muted">So với mức thường gặp</dt>
                 <dd className="mt-1 font-medium text-foreground">{row.difference}</dd>
               </div>
             </dl>
