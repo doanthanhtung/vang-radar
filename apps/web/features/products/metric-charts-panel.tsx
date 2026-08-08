@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { DecisionSignal } from "@vang-radar/domain";
 import { getMetricHistory, type MetricPoint } from "../../lib/api-client";
 
 type HistoryRange = "7d" | "30d" | "180d" | "1y";
@@ -88,6 +89,7 @@ export function MetricChartsPanel({
           data={displayedHistory}
           summaryLabel={selectedRange.summaryLabel}
           expectedDays={selectedRange.expectedDays}
+          signal={currentMetric.signal}
         />
       )}
     </section>
@@ -99,6 +101,7 @@ type CurrentMetric = {
   sellPrice: number;
   premiumSellPct: number;
   spreadPct: number;
+  signal: DecisionSignal;
 };
 
 export function syncLatestHistoryPoint(

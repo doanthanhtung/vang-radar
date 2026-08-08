@@ -99,7 +99,8 @@ export default async function ProductPage({
             buyPrice: product.buyPrice,
             sellPrice: product.sellPrice,
             premiumSellPct: product.premiumSellPct,
-            spreadPct: product.spreadPct
+            spreadPct: product.spreadPct,
+            signal: product.signal
           }}
         />
       </div>

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { formatHistoryPosition } from "./metric-charts";
 
 describe("MetricCharts detail analysis", () => {
   it("does not render the very-high threshold parameter", () => {
@@ -20,5 +21,10 @@ describe("MetricCharts detail analysis", () => {
     );
     expect(source).not.toMatch(/title="Spread mua bán"[\s\S]{0,160}primary=\{latest\.spreadAbs/);
     expect(source).not.toContain('{ label: "Hiện tại", value: formatPercent(latest.spread) }');
+  });
+
+  it("describes a buy gradually signal as lower than the complementary share of days", () => {
+    expect(formatHistoryPosition(20, "BUY_DCA")).toBe("Thấp hơn 80% số ngày");
+    expect(formatHistoryPosition(20, "HOLD")).toBe("Cao hơn 20% số ngày");
   });
 });
