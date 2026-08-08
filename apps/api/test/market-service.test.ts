@@ -10,6 +10,47 @@ describe("MarketService", () => {
     delete process.env.ENABLE_EXPERIMENTAL_DRAWDOWN_PLAN;
   });
 
+  it("serves the complete Redis snapshot selected by the current pointer", async () => {
+    const prisma = {
+      domesticGoldPrice: { findFirst: async () => ({ source: { code: "DOMESTIC" } }) },
+      worldGoldPrice: { findFirst: async () => ({ source: { code: "WORLD" } }) },
+      fxRate: { findFirst: async () => ({ source: { code: "FX" } }) }
+    };
+    const snapshot = {
+      time: "2026-08-08T08:00:00.000Z",
+      world: { xauUsdPerOz: 2400, usdVnd: 26000, worldVndPerLuong: 75_000_000, change7d: null },
+      macro: { dxy: null },
+      products: []
+    };
+    const redis = {
+      getJson: async (key: string) => {
+        if (key === "market:snapshot:current") return { snapshotId: "2026-08-08T08:00:00.000Z" };
+        if (key === "market:snapshot:2026-08-08T08:00:00.000Z:summary") return snapshot;
+        return null;
+      },
+      setJson: async () => undefined
+    };
+    const service = new MarketService(prisma as never, redis as never);
+
+    await expect(service.getSummary()).resolves.toEqual(snapshot);
+  });
+
+  it("serves market factor history from the snapshot selected by the pointer", async () => {
+    const snapshotId = "2026-08-08T08:00:00.000Z";
+    const history = [{ time: snapshotId, price: 2400 }];
+    const redis = {
+      getJson: async (key: string) => {
+        if (key === "market:snapshot:current") return { snapshotId };
+        if (key === `market:snapshot:${snapshotId}:market:world-gold:7`) return history;
+        return null;
+      },
+      setJson: async () => undefined
+    };
+    const service = new MarketService({} as never, redis as never);
+
+    await expect(service.getWorldGoldHistory(7)).resolves.toEqual(history);
+  });
+
   it("ignores absurd cached premium and recalculates stale bad metrics from valid raw inputs", async () => {
     const prisma = {
       domesticGoldPrice: {
