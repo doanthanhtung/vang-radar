@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { formatHistoryPosition } from "./metric-charts";
+import { formatHistoryPosition, formatSpreadDifference } from "./metric-charts";
 
 describe("MetricCharts detail analysis", () => {
   it("does not render the very-high threshold parameter", () => {
@@ -27,5 +27,11 @@ describe("MetricCharts detail analysis", () => {
     expect(formatHistoryPosition(20)).toBe("Thấp hơn 80% số ngày");
     expect(formatHistoryPosition(80)).toBe("Cao hơn 80% số ngày");
     expect(formatHistoryPosition(50)).toBe("Gần mức thường gặp");
+  });
+
+  it("describes spread difference as a concrete VND amount", () => {
+    expect(formatSpreadDifference(12_000)).toContain("Cao hơn 12.000");
+    expect(formatSpreadDifference(-8_000)).toContain("Thấp hơn 8.000");
+    expect(formatSpreadDifference(0)).toBe("Gần mức thường gặp");
   });
 });

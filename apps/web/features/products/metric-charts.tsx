@@ -172,6 +172,10 @@ export function MetricCharts({
   const priceChange = getChange(points, "sell");
   const premiumStats = getPercentStats(points, "premium");
   const spreadStats = getPercentStats(points, "spread");
+  const spreadAmounts = points
+    .map((point) => point.spreadAbs)
+    .filter((value): value is number => value !== null);
+  const typicalSpreadAmount = spreadAmounts.length ? quantile(spreadAmounts, 0.5) : null;
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -182,6 +186,7 @@ export function MetricCharts({
         premiumStats={premiumStats}
         spreadStats={spreadStats}
         currentSpreadAmount={latest.spreadAbs}
+        typicalSpreadAmount={typicalSpreadAmount}
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel">
@@ -402,7 +407,8 @@ function HistorySummaryTable({
   expectedDays,
   premiumStats,
   spreadStats,
-  currentSpreadAmount
+  currentSpreadAmount,
+  typicalSpreadAmount
 }: {
   days: number;
   summaryLabel: string;
@@ -410,6 +416,7 @@ function HistorySummaryTable({
   premiumStats: ReturnType<typeof getPercentStats>;
   spreadStats: ReturnType<typeof getPercentStats>;
   currentSpreadAmount: number | null;
+  typicalSpreadAmount: number | null;
 }) {
   const premiumDifference = premiumStats.latest - premiumStats.median;
   const spreadDifference = spreadStats.latest - spreadStats.median;
@@ -432,7 +439,10 @@ function HistorySummaryTable({
       currentMeta: currentSpreadAmount === null ? undefined : formatPercent(spreadStats.latest),
       typical: formatPercent(spreadStats.median),
       position: formatHistoryPosition(spreadStats.percentile),
-      difference: formatMedianDifference(spreadDifference),
+      difference:
+        currentSpreadAmount === null || typicalSpreadAmount === null
+          ? formatMedianDifference(spreadDifference)
+          : formatSpreadDifference(currentSpreadAmount - typicalSpreadAmount),
       accent: spreadDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh giữa giá mua và giá bán"
     }
@@ -616,4 +626,10 @@ function formatMedianDifference(value: number): string {
   if (Math.abs(value) < 0.0005) return "Gần mức thường gặp";
   const direction = value > 0 ? "Cao hơn" : "Thấp hơn";
   return `${direction} ${formatNumber(Math.abs(value) * 100)} điểm %`;
+}
+
+export function formatSpreadDifference(value: number): string {
+  if (Math.abs(value) < 0.5) return "Gần mức thường gặp";
+  const direction = value > 0 ? "Cao hơn" : "Thấp hơn";
+  return `${direction} ${formatVnd(Math.abs(value))}`;
 }
