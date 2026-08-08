@@ -23,8 +23,9 @@ describe("MetricCharts detail analysis", () => {
     expect(source).not.toContain('{ label: "Hiện tại", value: formatPercent(latest.spread) }');
   });
 
-  it("describes a buy gradually signal as lower than the complementary share of days", () => {
-    expect(formatHistoryPosition(20, "BUY_DCA")).toBe("Thấp hơn 80% số ngày");
-    expect(formatHistoryPosition(20, "HOLD")).toBe("Cao hơn 20% số ngày");
+  it("describes each metric position according to its own percentile", () => {
+    expect(formatHistoryPosition(20)).toBe("Thấp hơn 80% số ngày");
+    expect(formatHistoryPosition(80)).toBe("Cao hơn 80% số ngày");
+    expect(formatHistoryPosition(50)).toBe("Gần mức thường gặp");
   });
 });

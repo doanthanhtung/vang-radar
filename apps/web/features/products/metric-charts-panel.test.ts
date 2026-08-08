@@ -17,8 +17,7 @@ describe("syncLatestHistoryPoint", () => {
       buyPrice: 95,
       sellPrice: 105,
       premiumSellPct: 0.05,
-      spreadPct: 0.095,
-      signal: "BUY_DCA"
+      spreadPct: 0.095
     });
 
     expect(result[0]).toMatchObject({

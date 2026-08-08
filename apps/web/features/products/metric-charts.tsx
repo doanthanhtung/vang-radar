@@ -12,7 +12,6 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import type { DecisionSignal } from "@vang-radar/domain";
 import type { MetricPoint } from "../../lib/api-client";
 import { formatNumber, formatPercent, formatVnd } from "../../lib/utils";
 import { groupMetricHistoryByVietnameseDay } from "./metric-history-stats";
@@ -124,8 +123,11 @@ function percentileRank(values: number[], value: number): number {
   return Math.round((lowerOrEqual / values.length) * 100);
 }
 
-export function formatHistoryPosition(percentile: number, signal: DecisionSignal): string {
-  if (signal === "BUY_DCA") {
+export function formatHistoryPosition(percentile: number): string {
+  if (percentile >= 45 && percentile <= 55) {
+    return "Gần mức thường gặp";
+  }
+  if (percentile < 50) {
     return `Thấp hơn ${100 - percentile}% số ngày`;
   }
   return `Cao hơn ${percentile}% số ngày`;
@@ -144,13 +146,11 @@ function getPercentStats(points: ChartPoint[], key: "premium" | "spread") {
 export function MetricCharts({
   data,
   summaryLabel,
-  expectedDays,
-  signal
+  expectedDays
 }: {
   data: MetricPoint[];
   summaryLabel: string;
   expectedDays: number;
-  signal: DecisionSignal;
 }) {
   const points = groupMetricHistoryByVietnameseDay(data)
     .map(toPoint)
@@ -179,7 +179,6 @@ export function MetricCharts({
         days={points.length}
         summaryLabel={summaryLabel}
         expectedDays={expectedDays}
-        signal={signal}
         premiumStats={premiumStats}
         spreadStats={spreadStats}
         currentSpreadAmount={latest.spreadAbs}
@@ -401,7 +400,6 @@ function HistorySummaryTable({
   days,
   summaryLabel,
   expectedDays,
-  signal,
   premiumStats,
   spreadStats,
   currentSpreadAmount
@@ -409,7 +407,6 @@ function HistorySummaryTable({
   days: number;
   summaryLabel: string;
   expectedDays: number;
-  signal: DecisionSignal;
   premiumStats: ReturnType<typeof getPercentStats>;
   spreadStats: ReturnType<typeof getPercentStats>;
   currentSpreadAmount: number | null;
@@ -421,7 +418,7 @@ function HistorySummaryTable({
       label: "Premium",
       current: formatPercent(premiumStats.latest),
       typical: formatPercent(premiumStats.median),
-      position: formatHistoryPosition(premiumStats.percentile, signal),
+      position: formatHistoryPosition(premiumStats.percentile),
       difference: formatMedianDifference(premiumDifference),
       accent: premiumDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh so với vàng thế giới quy đổi"
@@ -434,7 +431,7 @@ function HistorySummaryTable({
           : formatVnd(currentSpreadAmount),
       currentMeta: currentSpreadAmount === null ? undefined : formatPercent(spreadStats.latest),
       typical: formatPercent(spreadStats.median),
-      position: formatHistoryPosition(spreadStats.percentile, signal),
+      position: formatHistoryPosition(spreadStats.percentile),
       difference: formatMedianDifference(spreadDifference),
       accent: spreadDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh giữa giá mua và giá bán"
