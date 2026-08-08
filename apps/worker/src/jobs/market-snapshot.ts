@@ -23,7 +23,13 @@ function vietnamDate(value: Date): string {
 
 function rangeStart(range: (typeof HISTORY_RANGES)[number]): Date {
   const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "180d" ? 180 : 365;
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const vietnamNow = new Date(Date.now() + VIETNAM_OFFSET_MS);
+  const vietnamStartOfToday = Date.UTC(
+    vietnamNow.getUTCFullYear(),
+    vietnamNow.getUTCMonth(),
+    vietnamNow.getUTCDate()
+  );
+  return new Date(vietnamStartOfToday - (days - 1) * 24 * 60 * 60 * 1000 - VIETNAM_OFFSET_MS);
 }
 
 function snapshotKey(snapshotId: string, suffix: string): string {
@@ -52,9 +58,13 @@ function latestByVietnamDay<T extends { time: Date }>(
     .map((point) => ({ time: point.time.toISOString(), value: point.value }));
 }
 
-function metricHistory(points: Array<Record<string, unknown> & { time: Date }>) {
+export function metricHistory(points: Array<Record<string, unknown> & { time: Date }>) {
   const byDay = new Map<string, (typeof points)[number]>();
-  for (const point of points) byDay.set(vietnamDate(point.time), point);
+  for (const point of points) {
+    const day = vietnamDate(point.time);
+    const existing = byDay.get(day);
+    if (!existing || point.time > existing.time) byDay.set(day, point);
+  }
   return [...byDay.values()]
     .sort((left, right) => left.time.getTime() - right.time.getTime())
     .map((point) => ({

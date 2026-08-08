@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publishMarketSnapshot } from "../src/jobs/market-snapshot.js";
+import { metricHistory, publishMarketSnapshot } from "../src/jobs/market-snapshot.js";
 
 type StoredValue = { value: string; ttl: number };
 
@@ -134,5 +134,18 @@ describe("publishMarketSnapshot", () => {
       snapshotId: "previous"
     });
     expect(redis.transactions).toHaveLength(0);
+  });
+});
+
+describe("metricHistory", () => {
+  it("keeps the last metric observed on each UTC+7 calendar day", () => {
+    const history = metricHistory([
+      { time: new Date("2026-08-01T16:00:00.000Z"), domesticBuyPriceVnd: 1, domesticSellPriceVnd: 2 },
+      { time: new Date("2026-08-02T02:00:00.000Z"), domesticBuyPriceVnd: 3, domesticSellPriceVnd: 4 },
+      { time: new Date("2026-08-02T08:00:00.000Z"), domesticBuyPriceVnd: 5, domesticSellPriceVnd: 6 }
+    ]);
+
+    expect(history).toHaveLength(2);
+    expect(history.map((point) => point.domesticSellPriceVnd)).toEqual([2, 6]);
   });
 });
