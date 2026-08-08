@@ -78,8 +78,17 @@ export class MetricsService {
     @Inject(RedisService) private readonly redis: RedisService
   ) {}
 
+  private async getSnapshotValue<T>(suffix: string): Promise<T | null> {
+    const pointer = await this.redis.getJson<{ snapshotId?: unknown }>("market:snapshot:current");
+    if (typeof pointer?.snapshotId !== "string") return null;
+    return this.redis.getJson<T>(`market:snapshot:${pointer.snapshotId}:${suffix}`);
+  }
+
   async getLatest(productCode: ProductCode) {
     if (await hasMockLatestInputs(this.prisma)) return null;
+
+    const snapshot = await this.getSnapshotValue(`product:${productCode}:metric`);
+    if (snapshot) return snapshot;
 
     const cached = await this.redis.getJson(`product:${productCode}:metrics:latest:v2`);
     if (cached) return cached;
@@ -92,6 +101,11 @@ export class MetricsService {
 
   async getHistory(productCode: ProductCode, range: HistoryRange) {
     if (await hasMockLatestInputs(this.prisma)) return [];
+
+    const snapshot = await this.getSnapshotValue<MetricHistoryPoint[]>(
+      `product:${productCode}:metrics:history:${range}`
+    );
+    if (snapshot) return snapshot;
 
     const cacheKey = `product:${productCode}:metrics:history:${range}:v6`;
     const cached = await this.redis.getJson<MetricHistoryPoint[]>(cacheKey);
