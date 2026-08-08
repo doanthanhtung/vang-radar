@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Clock3, Database, Gauge, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
@@ -20,6 +20,7 @@ import {
   toVietnamDateKey,
   type FactorHistoryPoint
 } from "../../lib/factor-history";
+import { loadMarketFactorHistories } from "../../lib/market-factor-history";
 import { cn, formatPercent, formatVnd } from "../../lib/utils";
 import {
   average,
@@ -42,6 +43,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   >({});
   const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
   const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
+  const prefetchedFactorKeyRef = useRef<string | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
 
@@ -170,6 +172,23 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     },
     [fetchFactorHistory]
   );
+
+  useEffect(() => {
+    if (!isDataReady || prefetchedFactorKeyRef.current === todayKey) return;
+
+    prefetchedFactorKeyRef.current = todayKey;
+    const timeout = window.setTimeout(() => {
+      void loadMarketFactorHistories({
+        xau: () => fetchFactorHistory("xau"),
+        usd: () => fetchFactorHistory("usd"),
+        dxy: () => fetchFactorHistory("dxy")
+      }).then((histories) => {
+        setFactorHistory((current) => ({ ...histories, ...current }));
+      });
+    }, 900);
+
+    return () => window.clearTimeout(timeout);
+  }, [fetchFactorHistory, isDataReady, todayKey]);
 
   const toggleFactor = (factor: ExpandedFactor) => {
     const next = expandedFactor === factor ? null : factor;
