@@ -70,20 +70,6 @@ export class AdminController {
     return result;
   }
 
-  @Get("access/today")
-  async getTodayAccess(
-    @Req() request: AdminRequest,
-    @Query("audience") audience?: string,
-    @Query("country") country?: string
-  ) {
-    const result = await this.adminService.getTodayIpAccess(parseAudience(audience), country);
-    await this.adminService.audit(request, "access_today.viewed", {
-      audience: result.audience,
-      country: result.country ?? "all"
-    });
-    return result;
-  }
-
   @Get("notifications/subscribers")
   async getNotificationSubscribers(
     @Req() request: AdminRequest,
@@ -125,9 +111,4 @@ function numberQuery(value?: string): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function parseAudience(value?: string): "human" | "bot" | "all" {
-  if (value === "bot" || value === "all") return value;
-  return "human";
 }

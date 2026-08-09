@@ -222,26 +222,6 @@ model AdminAuditLog {
   @@map("admin_audit_logs")
 }
 
-model SiteAccessLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  accessedAt     DateTime @default(now()) @map("accessed_at") @db.Timestamptz
-  ipAddress      String   @map("ip_address")
-  path           String?
-  method         String?
-  userAgent      String?  @map("user_agent")
-  acceptLanguage String?  @map("accept_language")
-  referer        String?
-  country        String?
-  city           String?
-  isBot          Boolean  @default(false) @map("is_bot")
-  botReason      String?  @map("bot_reason")
-
-  @@index([accessedAt(sort: Desc)])
-  @@index([ipAddress, accessedAt(sort: Desc)])
-  @@index([isBot, accessedAt(sort: Desc)])
-  @@map("site_access_logs")
-}
-
 model NotificationSubscriber {
   id                 String    @id @default(uuid()) @db.Uuid
   email              String    @unique
@@ -261,7 +241,6 @@ model NotificationSubscriber {
   @@index([lastNotifiedAt])
   @@map("notification_subscribers")
 }
-
 model BuyAlertEvent {
   id             String              @id @default(uuid()) @db.Uuid
   productId      String              @map("product_id") @db.Uuid
@@ -291,24 +270,4 @@ model BuyAlertDelivery {
   @@unique([eventId, subscriberId])
   @@index([subscriberId, sentAt(sort: Desc)])
   @@map("buy_alert_deliveries")
-}
-
-model BotAccessLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  accessedAt     DateTime @default(now()) @map("accessed_at") @db.Timestamptz
-  expiresAt      DateTime @map("expires_at") @db.Timestamptz
-  ipAddress      String   @map("ip_address")
-  path           String?
-  method         String?
-  userAgent      String?  @map("user_agent")
-  acceptLanguage String?  @map("accept_language")
-  referer        String?
-  country        String?
-  city           String?
-  botReason      String   @map("bot_reason")
-
-  @@index([accessedAt(sort: Desc)])
-  @@index([expiresAt(sort: Asc)])
-  @@index([ipAddress, accessedAt(sort: Desc)])
-  @@map("bot_access_logs")
 }

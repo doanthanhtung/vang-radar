@@ -1,14 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditService } from "./audit.service.js";
-import { AccessLogService } from "../telemetry/access-log.service.js";
 import { PrismaService } from "../../common/prisma.service.js";
 
 @Injectable()
 export class AdminService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AuditService) private readonly auditService: AuditService,
-    @Inject(AccessLogService) private readonly accessLogService: AccessLogService
+    @Inject(AuditService) private readonly auditService: AuditService
   ) {}
 
   audit(
@@ -24,10 +22,6 @@ export class AdminService {
 
   getAuditLogs(params: Parameters<AuditService["list"]>[0]) {
     return this.auditService.list(params);
-  }
-
-  getTodayIpAccess(audience: "human" | "bot" | "all" = "human", country?: string | undefined) {
-    return this.accessLogService.listTodayIpAccess(audience, country);
   }
 
   async getNotificationSubscribers(params: {
