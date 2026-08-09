@@ -6,10 +6,12 @@ type StoredValue = { value: string; ttl: number };
 function createRedis() {
   const values = new Map<string, StoredValue>();
   const transactions: string[][] = [];
+  const unlinked: string[][] = [];
 
   return {
     values,
     transactions,
+    unlinked,
     multi() {
       const commands: Array<() => void> = [];
       const keys: string[] = [];
@@ -26,6 +28,15 @@ function createRedis() {
         }
       };
       return transaction;
+    },
+    async scan(cursor: string) {
+      if (cursor !== "0") return ["0", []] as const;
+      return ["0", [...values.keys()]] as const;
+    },
+    async unlink(...keys: string[]) {
+      unlinked.push(keys);
+      keys.forEach((key) => values.delete(key));
+      return keys.length;
     }
   };
 }
@@ -119,6 +130,24 @@ describe("publishMarketSnapshot", () => {
     expect(JSON.parse(redis.values.get("market:snapshot:current")!.value)).toEqual({ snapshotId });
     expect(redis.values.get("market:snapshot:current")!.ttl).toBe(24 * 60 * 60);
     expect(redis.transactions[0]!.at(-1)).toBe("market:snapshot:current");
+    expect([...redis.values.keys()].some((key) => key.endsWith(":prices:history"))).toBe(false);
+  });
+
+  it("unlinks stale snapshots while keeping the current snapshot and pointer", async () => {
+    const redis = createRedis();
+    redis.values.set("market:snapshot:old:summary", { value: "old", ttl: 3600 });
+    redis.values.set("market:snapshot:current", {
+      value: JSON.stringify({ snapshotId: "old" }),
+      ttl: 3600
+    });
+
+    await publishMarketSnapshot(createPrisma() as never, redis as never);
+
+    expect(redis.values.has("market:snapshot:old:summary")).toBe(false);
+    expect(redis.values.has("market:snapshot:current")).toBe(true);
+    expect(redis.values.has("market:snapshot:2026-08-08T08:00:00.000Z:summary")).toBe(true);
+    expect(redis.unlinked.flat()).toContain("market:snapshot:old:summary");
+    expect(redis.unlinked.flat()).not.toContain("market:snapshot:current");
   });
 
   it("keeps the existing pointer when an active product has no matching signal", async () => {

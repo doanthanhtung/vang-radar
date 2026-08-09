@@ -36,6 +36,28 @@ function snapshotKey(snapshotId: string, suffix: string): string {
   return `market:snapshot:${snapshotId}:${suffix}`;
 }
 
+export async function cleanupStaleMarketSnapshots(
+  redis: Redis,
+  currentSnapshotId: string
+): Promise<number> {
+  let cursor = "0";
+  let deleted = 0;
+  const currentPrefix = `market:snapshot:${currentSnapshotId}:`;
+
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, "MATCH", "market:snapshot:*", "COUNT", 500);
+    const staleKeys = keys.filter(
+      (key) => key !== SNAPSHOT_POINTER_KEY && !key.startsWith(currentPrefix)
+    );
+    if (staleKeys.length > 0) {
+      deleted += await redis.unlink(...staleKeys);
+    }
+    cursor = nextCursor;
+  } while (cursor !== "0");
+
+  return deleted;
+}
+
 function numberValue(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -209,11 +231,6 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
       transaction.set(snapshotKey(snapshotId, `product:${product.code}:metrics:history:${range}`), JSON.stringify(metricHistory(rows as never)), "EX", SNAPSHOT_TTL_SECONDS);
     }
 
-    const prices = await prisma.domesticGoldPrice.findMany({
-      where: { productId: product.id, isValid: true, source: { code: { not: { startsWith: "MOCK_" } } } },
-      orderBy: { time: "asc" }
-    });
-    transaction.set(snapshotKey(snapshotId, `product:${product.code}:prices:history`), JSON.stringify(prices), "EX", SNAPSHOT_TTL_SECONDS);
   }
 
   for (const days of MARKET_HISTORY_DAYS) {
@@ -231,5 +248,6 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
   transaction.set(SNAPSHOT_POINTER_KEY, JSON.stringify({ snapshotId }), "EX", SNAPSHOT_TTL_SECONDS);
   const result = await transaction.exec();
   if (!result || result.some(([error]) => error)) throw new Error("Failed to publish market snapshot");
+  await cleanupStaleMarketSnapshots(redis, snapshotId);
   return snapshotId;
 }

@@ -115,6 +115,34 @@ jobs:
           docker compose --profile tunnel -f $env:COMPOSE_FILE up -d --no-deps --force-recreate --remove-orphans api worker web cloudflared
           if ($LASTEXITCODE -ne 0) { throw "Failed to start production services." }
 
+      - name: Clean stale market snapshots
+        if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
+        run: |
+          $currentPayload = (docker compose -f $env:COMPOSE_FILE exec -T redis redis-cli --raw GET market:snapshot:current).Trim()
+          if ($LASTEXITCODE -ne 0) { throw "Failed to read the current market snapshot pointer." }
+          if (-not $currentPayload) {
+            Write-Host "No current market snapshot pointer found; skipping cleanup."
+            return
+          }
+
+          $currentSnapshotId = (($currentPayload | ConvertFrom-Json).snapshotId -as [string])
+          if (-not $currentSnapshotId) { throw "Current market snapshot pointer is invalid." }
+
+          $snapshotKeys = @(
+            docker compose -f $env:COMPOSE_FILE exec -T redis redis-cli --scan --pattern "market:snapshot:*" |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ }
+          )
+          foreach ($key in $snapshotKeys) {
+            if ($key -eq "market:snapshot:current" -or $key.StartsWith("market:snapshot:$currentSnapshotId:")) {
+              continue
+            }
+            if ($key -notmatch "^market:snapshot:[^:]+:") {
+              continue
+            }
+            docker compose -f $env:COMPOSE_FILE exec -T redis redis-cli UNLINK -- $key | Out-Null
+          }
+
       - name: Health check
         if: ${{ env.DEPLOY_IS_LATEST == 'true' }}
         run: |
