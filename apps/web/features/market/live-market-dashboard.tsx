@@ -29,6 +29,7 @@ import {
   getVangDecision
 } from "../../lib/vang-score";
 import { ProductTable } from "./product-table";
+import { subscribeToSummaryStream } from "../../lib/summary-stream";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
@@ -51,26 +52,24 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
 
   useEffect(() => {
     const streamUrl = getApiUrl("/market/summary/stream");
-    let events: EventSource | null = null;
-    if (new URL(streamUrl, window.location.origin).origin === window.location.origin) {
-      events = new EventSource(streamUrl);
-      events.addEventListener("summary", (event) => {
+    const sameOrigin = new URL(streamUrl, window.location.origin).origin === window.location.origin;
+    const cleanupStream = subscribeToSummaryStream({
+      streamUrl,
+      EventSourceCtor: sameOrigin ? EventSource : null,
+      refreshSummary,
+      onSummary: (event) => {
         try {
           setSummary(JSON.parse(event.data) as MarketSummary);
         } catch {}
-      });
-    }
-    const pollFallback = setInterval(
-      () => void refreshSummary().catch(() => undefined),
-      SUMMARY_POLL_FALLBACK_MS
-    );
+      },
+      fallbackIntervalMs: SUMMARY_POLL_FALLBACK_MS
+    });
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") void refreshSummary().catch(() => undefined);
     };
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
-      events?.close();
-      clearInterval(pollFallback);
+      cleanupStream();
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [refreshSummary]);
