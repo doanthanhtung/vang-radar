@@ -134,7 +134,7 @@ jobs:
               Where-Object { $_ }
           )
           foreach ($key in $snapshotKeys) {
-            if ($key -eq "market:snapshot:current" -or $key.StartsWith("market:snapshot:$currentSnapshotId:")) {
+            if ($key -eq "market:snapshot:current" -or $key.StartsWith("market:snapshot:${currentSnapshotId}:")) {
               continue
             }
             if ($key -notmatch "^market:snapshot:[^:]+:") {
