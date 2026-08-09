@@ -1,10 +1,10 @@
 import type { PrismaService } from "./prisma.service.js";
 
-export async function hasMockLatestInputs(prisma: PrismaService): Promise<boolean> {
+export async function hasUsableLatestInputs(prisma: PrismaService): Promise<boolean> {
   const [domestic, world, fx] = await Promise.all([
     prisma.domesticGoldPrice.findFirst({
       where: { isValid: true, source: { code: { not: { startsWith: "MOCK_" } } } },
-      include: { source: true },
+      select: { id: true },
       orderBy: { time: "desc" }
     }),
     prisma.worldGoldPrice.findFirst({
@@ -14,7 +14,7 @@ export async function hasMockLatestInputs(prisma: PrismaService): Promise<boolea
         priceUsdPerOz: { gt: 100 },
         source: { code: { not: { startsWith: "MOCK_" } } }
       },
-      include: { source: true },
+      select: { id: true },
       orderBy: { time: "desc" }
     }),
     prisma.fxRate.findFirst({
@@ -24,10 +24,10 @@ export async function hasMockLatestInputs(prisma: PrismaService): Promise<boolea
         rate: { gte: 20_000, lte: 40_000 },
         source: { code: { not: { startsWith: "MOCK_" } } }
       },
-      include: { source: true },
+      select: { id: true },
       orderBy: { time: "desc" }
     })
   ]);
 
-  return !domestic || !world || !fx;
+  return Boolean(domestic && world && fx);
 }

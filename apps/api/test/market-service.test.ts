@@ -12,9 +12,21 @@ describe("MarketService", () => {
 
   it("serves the complete Redis snapshot selected by the current pointer", async () => {
     const prisma = {
-      domesticGoldPrice: { findFirst: async () => ({ source: { code: "DOMESTIC" } }) },
-      worldGoldPrice: { findFirst: async () => ({ source: { code: "WORLD" } }) },
-      fxRate: { findFirst: async () => ({ source: { code: "FX" } }) }
+      domesticGoldPrice: {
+        findFirst: async () => {
+          throw new Error("PostgreSQL must not be queried");
+        }
+      },
+      worldGoldPrice: {
+        findFirst: async () => {
+          throw new Error("PostgreSQL must not be queried");
+        }
+      },
+      fxRate: {
+        findFirst: async () => {
+          throw new Error("PostgreSQL must not be queried");
+        }
+      }
     };
     const snapshot = {
       time: "2026-08-08T08:00:00.000Z",

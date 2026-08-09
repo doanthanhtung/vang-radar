@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { calculateSpreadPct, calculateWorldVndPerLuong } from "@vang-radar/domain";
-import { hasMockLatestInputs } from "../../common/data-source.js";
+import { hasUsableLatestInputs } from "../../common/data-source.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import { RedisService } from "../../common/redis.service.js";
 import { latestTickByVietnamDay } from "./market-history.util.js";
@@ -246,7 +246,10 @@ export class MarketService {
   }
 
   async getSummary(): Promise<MarketSummary> {
-    if (await hasMockLatestInputs(this.prisma)) {
+    const snapshot = await this.getSnapshotValue<MarketSummary>("summary");
+    if (snapshot && !hasUnreasonableSummary(snapshot)) return snapshot;
+
+    if (!(await hasUsableLatestInputs(this.prisma))) {
       return {
         time: new Date().toISOString(),
         world: { xauUsdPerOz: 0, usdVnd: 0, worldVndPerLuong: 0, change7d: null },
@@ -254,9 +257,6 @@ export class MarketService {
         products: []
       };
     }
-
-    const snapshot = await this.getSnapshotValue<MarketSummary>("summary");
-    if (snapshot && !hasUnreasonableSummary(snapshot)) return snapshot;
 
     const experimentalDrawdownPlanEnabled = isExperimentalDrawdownPlanEnabled();
     const cacheKey = `market:summary:latest:v7:drawdown-plan:${experimentalDrawdownPlanEnabled ? "on" : "off"}`;

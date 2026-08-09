@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { calculateSpreadPct, type HistoryRange, type ProductCode } from "@vang-radar/domain";
-import { hasMockLatestInputs } from "../../common/data-source.js";
+import { hasUsableLatestInputs } from "../../common/data-source.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import { RedisService } from "../../common/redis.service.js";
 import { rangeToDate } from "../../common/range.js";
@@ -85,13 +85,13 @@ export class MetricsService {
   }
 
   async getLatest(productCode: ProductCode) {
-    if (await hasMockLatestInputs(this.prisma)) return null;
-
     const snapshot = await this.getSnapshotValue(`product:${productCode}:metric`);
     if (snapshot) return snapshot;
 
     const cached = await this.redis.getJson(`product:${productCode}:metrics:latest:v2`);
     if (cached) return cached;
+
+    if (!(await hasUsableLatestInputs(this.prisma))) return null;
 
     return this.prisma.goldMetric.findFirst({
       where: { product: { code: productCode } },
@@ -100,8 +100,6 @@ export class MetricsService {
   }
 
   async getHistory(productCode: ProductCode, range: HistoryRange) {
-    if (await hasMockLatestInputs(this.prisma)) return [];
-
     const snapshot = await this.getSnapshotValue<MetricHistoryPoint[]>(
       `product:${productCode}:metrics:history:${range}`
     );
@@ -110,6 +108,8 @@ export class MetricsService {
     const cacheKey = `product:${productCode}:metrics:history:${range}:v6`;
     const cached = await this.redis.getJson<MetricHistoryPoint[]>(cacheKey);
     if (cached) return cached;
+
+    if (!(await hasUsableLatestInputs(this.prisma))) return [];
 
     const history = await this.prisma.goldMetric.findMany({
       where: { product: { code: productCode }, time: { gte: rangeToDate(range) } },
