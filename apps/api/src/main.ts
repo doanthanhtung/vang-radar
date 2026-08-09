@@ -11,7 +11,7 @@ import { AppModule } from "./app.module.js";
 export async function createApiApp() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: true }),
+    new FastifyAdapter({ trustProxy: true, maxParamLength: 512 }),
     {
       logger: ["error", "warn", "log"]
     }
