@@ -31,7 +31,7 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[]; a
 
   return (
     <>
-      <div className="space-y-2.5 md:hidden">
+      <div className="space-y-3 md:hidden">
         {rankedProducts.map((product) => (
           <article key={product.code} className="research-card overflow-hidden rounded-lg">
             <Link
