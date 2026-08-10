@@ -10,7 +10,7 @@ export async function refreshMarketSnapshot(prisma: PrismaClient, redis: Redis) 
   await fetchFx(prisma);
   await fetchMacroIndicators(prisma);
   await fetchDomesticGold(prisma);
-  await calculateLatestMetrics(prisma);
+  await calculateLatestMetrics(prisma, redis);
   await generateLatestSignals(prisma);
   return publishMarketSnapshot(prisma, redis);
 }

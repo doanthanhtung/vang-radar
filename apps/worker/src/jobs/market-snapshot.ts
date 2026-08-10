@@ -171,12 +171,15 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
       productRows.map(async ({ product, metric }) =>
         [
           product.id,
-          await prisma.goldMetric.count({
-          where: {
-            productId: product.id,
-            time: { gte: new Date(Date.now() - 180 * 86_400_000), lt: metric.time }
-          }
-          })
+          metricHistory(
+            (await prisma.goldMetric.findMany({
+              where: {
+                productId: product.id,
+                time: { gte: new Date(Date.now() - 180 * 86_400_000), lt: metric.time }
+              },
+              orderBy: { time: "asc" }
+            })) as never
+          ).length
         ] as const
       )
     )

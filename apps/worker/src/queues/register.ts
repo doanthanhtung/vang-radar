@@ -39,7 +39,7 @@ export function registerQueues(prisma: PrismaClient) {
     "fetch-world-gold": () => fetchWorldGold(prisma),
     "fetch-fx": () => fetchFx(prisma),
     "fetch-macro-indicators": () => fetchMacroIndicators(prisma),
-    "calculate-metrics": () => calculateLatestMetrics(prisma),
+    "calculate-metrics": () => calculateLatestMetrics(prisma, cacheClient),
     "generate-signals": () => generateLatestSignals(prisma),
     "send-buy-alerts": () => sendBuyAlerts(prisma),
     "refresh-market-summary-cache": () => refreshMarketSnapshot(prisma, cacheClient)
