@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import type { Redis } from "ioredis";
 import { createUnsubscribeToken, loadConfig } from "@vang-radar/config";
 import { DISCLAIMER } from "@vang-radar/domain";
 import { createLogger } from "@vang-radar/logger";
+import { acquireAlertLock, releaseAlertLock } from "./alert-lock.js";
 
 const logger = createLogger("buy-alerts");
 
@@ -52,8 +55,24 @@ export type AlertEventSelection = AlertCandidate & {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 8 * 60 * 60 * 1000;
+const ALERT_LOCK_TTL_MS = 30 * 60 * 1000;
 
-export async function sendBuyAlerts(prisma: PrismaClient) {
+export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis) {
+  if (!redis) return sendBuyAlertsUnlocked(prisma);
+
+  const token = randomUUID();
+  if (!(await acquireAlertLock(redis, token, ALERT_LOCK_TTL_MS))) {
+    return { sent: 0, skipped: "already_running" };
+  }
+
+  try {
+    return await sendBuyAlertsUnlocked(prisma);
+  } finally {
+    await releaseAlertLock(redis, token);
+  }
+}
+
+async function sendBuyAlertsUnlocked(prisma: PrismaClient) {
   const now = new Date();
   const pending = await findPendingAlertEvents(prisma, now);
   if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
@@ -117,6 +136,26 @@ export function canDispatchNotification(sentAt: Date[], now: Date): boolean {
   if (recent.length >= 2) return false;
   const latest = recent.sort((left, right) => right.getTime() - left.getTime())[0];
   return !latest || now.getTime() - latest.getTime() >= MIN_GAP_MS;
+}
+
+export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {
+  const latestByProduct = new Map<string, AlertCandidate>();
+  for (const candidate of candidates) {
+    const existing = latestByProduct.get(candidate.code);
+    if (!existing || candidate.transitionTime > existing.transitionTime) {
+      latestByProduct.set(candidate.code, candidate);
+    }
+  }
+  return [...latestByProduct.values()].sort((left, right) => {
+    if (left.transitionTime.getTime() !== right.transitionTime.getTime()) {
+      return left.transitionTime.getTime() - right.transitionTime.getTime();
+    }
+    if (left.premiumSellPct !== right.premiumSellPct) {
+      return left.premiumSellPct - right.premiumSellPct;
+    }
+    if (left.spreadPct !== right.spreadPct) return left.spreadPct - right.spreadPct;
+    return right.score - left.score;
+  });
 }
 
 function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: number }): Record<string, string> | undefined {
@@ -221,11 +260,12 @@ async function findPendingAlertEvents(prisma: PrismaClient, now: Date): Promise<
     where: { occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
     include: { product: { include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 1 } } } }, orderBy: { occurredAt: "asc" }
   });
-  return events.filter((event) => {
+  const candidates = events.filter((event) => {
     const metric = event.product.goldMetrics[0];
     const signal = event.product.signalSnapshots[0];
     return metric && signal && signal.signal === "BUY_DCA" && metric.time.getTime() === signal.time.getTime() && now.getTime() - metric.time.getTime() <= 15 * 60 * 1000;
-  }).map((event) => ({ eventId: event.id, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần", reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+  }).map((event) => ({ eventId: event.id, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+  return deduplicateAlertCandidates(candidates);
 }
 
 export function selectBuyDcaAlertEvent(

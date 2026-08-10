@@ -9,7 +9,7 @@ const logger = createLogger("vang-radar-worker");
 
 export async function runOnce(redis: Redis) {
   await refreshMarketSnapshot(prisma, redis);
-  await sendBuyAlerts(prisma);
+  await sendBuyAlerts(prisma, redis);
 }
 
 async function main() {

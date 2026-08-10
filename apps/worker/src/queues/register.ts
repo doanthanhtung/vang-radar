@@ -41,7 +41,7 @@ export function registerQueues(prisma: PrismaClient) {
     "fetch-macro-indicators": () => fetchMacroIndicators(prisma),
     "calculate-metrics": () => calculateLatestMetrics(prisma, cacheClient),
     "generate-signals": () => generateLatestSignals(prisma),
-    "send-buy-alerts": () => sendBuyAlerts(prisma),
+    "send-buy-alerts": () => sendBuyAlerts(prisma, cacheClient),
     "refresh-market-summary-cache": () => refreshMarketSnapshot(prisma, cacheClient)
   };
 

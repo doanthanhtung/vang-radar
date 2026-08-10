@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canDispatchNotification,
+  deduplicateAlertCandidates,
   selectBuyDcaAlertEvent,
   selectBuyDcaTransitions
 } from "../src/jobs/buy-alerts.js";
@@ -79,6 +80,22 @@ describe("selectBuyDcaAlertEvent", () => {
     const product = productWithSignals("BUY_DCA", "BUY_DCA");
     const baseline = { score: 70, premiumSellPct: 0.5, episode: 1 };
     expect(selectBuyDcaAlertEvent(product, baseline)).toBeNull();
+  });
+});
+
+describe("deduplicateAlertCandidates", () => {
+  it("keeps only the newest event for each product", () => {
+    const older = selectBuyDcaAlertEvent(productWithSignals("BUY_DCA", "HOLD"), null)!;
+    const newer = {
+      ...older,
+      eventId: "new-event",
+      transitionTime: new Date("2026-07-24T09:00:00.000Z")
+    };
+
+    expect(deduplicateAlertCandidates([
+      { ...older, eventId: "old-event" },
+      newer
+    ])).toEqual([newer]);
   });
 });
 
