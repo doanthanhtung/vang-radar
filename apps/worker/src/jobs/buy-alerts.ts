@@ -56,6 +56,7 @@ export type AlertEventSelection = AlertCandidate & {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 8 * 60 * 60 * 1000;
 const ALERT_LOCK_TTL_MS = 30 * 60 * 1000;
+const UNLIMITED_ALERT_EMAIL = "doanthanhtung.pc@gmail.com";
 
 export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis) {
   if (!redis) return sendBuyAlertsUnlocked(prisma);
@@ -97,7 +98,12 @@ async function sendBuyAlertsUnlocked(prisma: PrismaClient) {
         orderBy: { sentAt: "desc" },
         select: { sentAt: true }
       });
-      if (!canDispatchNotification(deliveries.map((delivery) => delivery.sentAt), now)) continue;
+      if (
+        !isUnlimitedAlertRecipient(subscriber.email) &&
+        !canDispatchNotification(deliveries.map((delivery) => delivery.sentAt), now)
+      ) {
+        continue;
+      }
       const delivered = await prisma.buyAlertDelivery.findMany({
         where: { subscriberId: subscriber.id, eventId: { in: pending.map((candidate) => candidate.eventId!) } },
         select: { eventId: true }
@@ -136,6 +142,10 @@ export function canDispatchNotification(sentAt: Date[], now: Date): boolean {
   if (recent.length >= 2) return false;
   const latest = recent.sort((left, right) => right.getTime() - left.getTime())[0];
   return !latest || now.getTime() - latest.getTime() >= MIN_GAP_MS;
+}
+
+export function isUnlimitedAlertRecipient(email: string): boolean {
+  return email.trim().toLowerCase() === UNLIMITED_ALERT_EMAIL;
 }
 
 export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {

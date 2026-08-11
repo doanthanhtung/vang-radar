@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canDispatchNotification,
   deduplicateAlertCandidates,
+  isUnlimitedAlertRecipient,
   selectBuyDcaAlertEvent,
   selectBuyDcaTransitions
 } from "../src/jobs/buy-alerts.js";
@@ -114,5 +115,16 @@ describe("canDispatchNotification", () => {
         now
       )
     ).toBe(false);
+  });
+});
+
+describe("isUnlimitedAlertRecipient", () => {
+  it("matches the temporary unlimited recipient case-insensitively", () => {
+    expect(isUnlimitedAlertRecipient("doanthanhtung.pc@gmail.com")).toBe(true);
+    expect(isUnlimitedAlertRecipient(" DOANTHANHTUNG.PC@GMAIL.COM ")).toBe(true);
+  });
+
+  it("does not bypass limits for other recipients", () => {
+    expect(isUnlimitedAlertRecipient("other@example.com")).toBe(false);
   });
 });
