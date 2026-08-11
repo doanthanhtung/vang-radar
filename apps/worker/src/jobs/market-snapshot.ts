@@ -21,6 +21,14 @@ function vietnamDate(value: Date): string {
   return new Date(value.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+function vietnamStartOfToday(): Date {
+  const vietnamNow = new Date(Date.now() + VIETNAM_OFFSET_MS);
+  return new Date(
+    Date.UTC(vietnamNow.getUTCFullYear(), vietnamNow.getUTCMonth(), vietnamNow.getUTCDate()) -
+      VIETNAM_OFFSET_MS
+  );
+}
+
 function rangeStart(range: (typeof HISTORY_RANGES)[number]): Date {
   const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "180d" ? 180 : 365;
   const vietnamNow = new Date(Date.now() + VIETNAM_OFFSET_MS);
@@ -184,6 +192,39 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
       )
     )
   );
+  const previousDayCutoff = vietnamStartOfToday();
+  const previousDayCloses = new Map(
+    await Promise.all(
+      productRows.map(async ({ product }) => {
+        const rawPriceClose = await prisma.domesticGoldPrice.findFirst({
+          where: {
+            productId: product.id,
+            isValid: true,
+            time: { lt: previousDayCutoff },
+            source: { code: { not: { startsWith: "MOCK_" } } }
+          },
+          orderBy: { time: "desc" },
+          select: { buyPriceVnd: true, sellPriceVnd: true }
+        });
+        if (rawPriceClose) return [product.id, rawPriceClose] as const;
+
+        const metricClose = await prisma.goldMetric.findFirst({
+          where: { productId: product.id, time: { lt: previousDayCutoff } },
+          orderBy: { time: "desc" },
+          select: { domesticBuyPriceVnd: true, domesticSellPriceVnd: true }
+        });
+        return [
+          product.id,
+          metricClose
+            ? {
+                buyPriceVnd: metricClose.domesticBuyPriceVnd,
+                sellPriceVnd: metricClose.domesticSellPriceVnd
+              }
+            : null
+        ] as const;
+      })
+    )
+  );
   const summary = {
     time: snapshotId,
     world: {
@@ -193,31 +234,39 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
       change7d: numberValue(productRows[0]?.metric.xauMomentum7d) ?? null
     },
     macro: { dxy: latestDxy ? Number(latestDxy.value) : null },
-    products: productRows.map(({ product, metric, signal, buyPrice, sellPrice }) => ({
-      code: product.code,
-      name: product.name,
-      brand: product.brand,
-      buyPrice,
-      sellPrice,
-      premiumSellPct: Number(metric.premiumSellPct),
-      premiumBuyPct: Number(metric.premiumBuyPct),
-      spreadAbsVnd: sellPrice - buyPrice,
-      spreadPct: calculateSpreadPct(sellPrice, buyPrice),
-      signal: signal.signal,
-      score: Number(signal.score),
-      confidence: Number(signal.confidence),
-      reasons: Array.isArray(signal.reasons) ? signal.reasons : [],
-      premiumPercentile180d: numberValue(metric.premiumPercentile180d),
-      spreadPercentile180d: numberValue(metric.spreadPercentile180d),
-      historySampleSize180d: historySampleSizes.get(product.id) ?? 0,
-      xauMomentum7d: numberValue(metric.xauMomentum7d),
-      xauMomentum30d: numberValue(metric.xauMomentum30d),
-      xauMomentum7dDays: numberValue(metric.xauMomentum7dDays),
-      xauMomentum30dDays: numberValue(metric.xauMomentum30dDays),
-      domesticMomentum7d: numberValue(metric.domesticMomentum7d),
-      domesticMomentum7dDays: numberValue(metric.domesticMomentum7dDays),
-      previousDayClose: null
-    }))
+    products: productRows.map(({ product, metric, signal, buyPrice, sellPrice }) => {
+      const previousClose = previousDayCloses.get(product.id);
+      return {
+        code: product.code,
+        name: product.name,
+        brand: product.brand,
+        buyPrice,
+        sellPrice,
+        premiumSellPct: Number(metric.premiumSellPct),
+        premiumBuyPct: Number(metric.premiumBuyPct),
+        spreadAbsVnd: sellPrice - buyPrice,
+        spreadPct: calculateSpreadPct(sellPrice, buyPrice),
+        signal: signal.signal,
+        score: Number(signal.score),
+        confidence: Number(signal.confidence),
+        reasons: Array.isArray(signal.reasons) ? signal.reasons : [],
+        premiumPercentile180d: numberValue(metric.premiumPercentile180d),
+        spreadPercentile180d: numberValue(metric.spreadPercentile180d),
+        historySampleSize180d: historySampleSizes.get(product.id) ?? 0,
+        xauMomentum7d: numberValue(metric.xauMomentum7d),
+        xauMomentum30d: numberValue(metric.xauMomentum30d),
+        xauMomentum7dDays: numberValue(metric.xauMomentum7dDays),
+        xauMomentum30dDays: numberValue(metric.xauMomentum30dDays),
+        domesticMomentum7d: numberValue(metric.domesticMomentum7d),
+        domesticMomentum7dDays: numberValue(metric.domesticMomentum7dDays),
+        previousDayClose: previousClose
+          ? {
+              buyPriceVnd: Number(previousClose.buyPriceVnd),
+              sellPriceVnd: Number(previousClose.sellPriceVnd)
+            }
+          : null
+      };
+    })
   };
 
   const transaction = redis.multi();

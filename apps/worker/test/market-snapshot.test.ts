@@ -102,12 +102,20 @@ function createPrisma({ includeDxy = true, includeSignal = true } = {}) {
       findMany: async () => product.goldMetrics
     },
     domesticGoldPrice: {
-      findFirst: async () => ({
-        time: at,
-        buyPriceVnd: 140_000_000,
-        sellPriceVnd: 142_000_000,
-        source: { code: "DOMESTIC" }
-      }),
+      findFirst: async (args?: { where?: { time?: { lt?: Date } } }) =>
+        args?.where?.time?.lt
+          ? {
+              time: new Date("2026-08-07T16:45:00.000Z"),
+              buyPriceVnd: 139_000_000,
+              sellPriceVnd: 141_000_000,
+              source: { code: "DOMESTIC" }
+            }
+          : {
+              time: at,
+              buyPriceVnd: 140_000_000,
+              sellPriceVnd: 142_000_000,
+              source: { code: "DOMESTIC" }
+            },
       findMany: async () => [
         { time: at, buyPriceVnd: 140_000_000, sellPriceVnd: 142_000_000 }
       ]
@@ -164,6 +172,18 @@ describe("publishMarketSnapshot", () => {
       snapshotId: "previous"
     });
     expect(redis.transactions).toHaveLength(0);
+  });
+
+  it("includes the previous Vietnam-day close in the published summary", async () => {
+    const redis = createRedis();
+
+    const snapshotId = await publishMarketSnapshot(createPrisma() as never, redis as never);
+
+    const summary = JSON.parse(redis.values.get(`market:snapshot:${snapshotId}:summary`)!.value);
+    expect(summary.products[0]?.previousDayClose).toEqual({
+      buyPriceVnd: 139_000_000,
+      sellPriceVnd: 141_000_000
+    });
   });
 });
 
