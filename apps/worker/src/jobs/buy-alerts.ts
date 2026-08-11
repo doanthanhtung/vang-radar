@@ -28,6 +28,8 @@ type NodemailerModule = {
 
 type AlertCandidate = {
   eventId?: string;
+  eventType?: string;
+  episode?: number;
   code: string;
   name: string;
   brand: string;
@@ -48,13 +50,16 @@ export type AlertEventBaseline = {
 };
 
 export type AlertEventSelection = AlertCandidate & {
-  type: "ENTERED_BUY_DCA" | "BUY_DCA_IMPROVED";
+  type: "ENTERED_BUY_DCA" | "BUY_DCA_IMPROVED" | "PREMIUM_DROP";
   episode: number;
   fingerprint: string;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 8 * 60 * 60 * 1000;
+const FRESH_METRIC_MS = 15 * 60 * 1000;
+const PREMIUM_DROP_STEP = 0.005;
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const ALERT_LOCK_TTL_MS = 30 * 60 * 1000;
 const UNLIMITED_ALERT_EMAIL = "doanthanhtung.pc@gmail.com";
 
@@ -67,15 +72,15 @@ export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis) {
   }
 
   try {
-    return await sendBuyAlertsUnlocked(prisma);
+    return await sendBuyAlertsUnlocked(prisma, redis);
   } finally {
     await releaseAlertLock(redis, token);
   }
 }
 
-async function sendBuyAlertsUnlocked(prisma: PrismaClient) {
+async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis) {
   const now = new Date();
-  const pending = await findPendingAlertEvents(prisma, now);
+  const pending = await findPendingAlertEvents(prisma, now, redis);
   if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
   const subscribers = selectTemporaryAlertRecipients(await prisma.notificationSubscriber.findMany({
     where: { status: "active", buyAlertEnabled: true },
@@ -155,9 +160,12 @@ export function selectTemporaryAlertRecipients<T extends { email: string }>(subs
 export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {
   const latestByProduct = new Map<string, AlertCandidate>();
   for (const candidate of candidates) {
-    const existing = latestByProduct.get(candidate.code);
+    const key = candidate.eventType === "PREMIUM_DROP"
+      ? `${candidate.code}:${candidate.eventType}:${candidate.episode ?? 0}`
+      : candidate.code;
+    const existing = latestByProduct.get(key);
     if (!existing || candidate.transitionTime > existing.transitionTime) {
-      latestByProduct.set(candidate.code, candidate);
+      latestByProduct.set(key, candidate);
     }
   }
   return [...latestByProduct.values()].sort((left, right) => {
@@ -205,6 +213,106 @@ type TransitionProduct = {
     reasons: unknown;
   }>;
 };
+
+type PremiumHistoryPoint = {
+  time: Date | string;
+  premiumSellPct: unknown;
+};
+
+type SnapshotReader = {
+  get(key: string): Promise<string | null>;
+};
+
+function vietnamDate(value: Date): string {
+  return new Date(value.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function vietnamStartOfToday(now: Date): Date {
+  const vietnamNow = new Date(now.getTime() + VIETNAM_OFFSET_MS);
+  return new Date(
+    Date.UTC(vietnamNow.getUTCFullYear(), vietnamNow.getUTCMonth(), vietnamNow.getUTCDate()) -
+      VIETNAM_OFFSET_MS
+  );
+}
+
+export function findPreviousTradingDayPremium(points: PremiumHistoryPoint[], now: Date): number | null {
+  const cutoff = vietnamStartOfToday(now).getTime();
+  const previous = points
+    .map((point) => ({ time: new Date(point.time), premiumSellPct: Number(point.premiumSellPct) }))
+    .filter(
+      (point) =>
+        !Number.isNaN(point.time.getTime()) &&
+        point.time.getTime() < cutoff &&
+        Number.isFinite(point.premiumSellPct)
+    )
+    .sort((left, right) => right.time.getTime() - left.time.getTime())[0];
+  return previous?.premiumSellPct ?? null;
+}
+
+export async function loadPreviousTradingDayPremiumFromSnapshot(
+  redis: SnapshotReader,
+  productCode: string,
+  now: Date
+): Promise<number | null> {
+  try {
+    const pointer = await redis.get("market:snapshot:current");
+    if (!pointer) return null;
+    const parsedPointer = JSON.parse(pointer) as { snapshotId?: unknown };
+    if (typeof parsedPointer.snapshotId !== "string") return null;
+    const history = await redis.get(
+      `market:snapshot:${parsedPointer.snapshotId}:product:${productCode}:metrics:history:1y`
+    );
+    if (!history) return null;
+    const parsedHistory = JSON.parse(history);
+    return Array.isArray(parsedHistory) ? findPreviousTradingDayPremium(parsedHistory, now) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function selectPremiumDropAlertEvent(
+  product: TransitionProduct,
+  previousDayPremium: number | null,
+  now: Date
+): AlertEventSelection | null {
+  const metric = product.goldMetrics[0];
+  const signal = product.signalSnapshots[0];
+  if (
+    product.code !== "DOJI_RING_9999" ||
+    !metric ||
+    !signal ||
+    previousDayPremium === null ||
+    !Number.isFinite(previousDayPremium) ||
+    signal.signal !== "BUY_DCA" ||
+    metric.time.getTime() !== signal.time.getTime() ||
+    now.getTime() - metric.time.getTime() > FRESH_METRIC_MS
+  ) {
+    return null;
+  }
+
+  const premiumSellPct = Number(metric.premiumSellPct);
+  if (!Number.isFinite(premiumSellPct)) return null;
+  const level = Math.floor((previousDayPremium - premiumSellPct + 1e-12) / PREMIUM_DROP_STEP);
+  if (level < 1) return null;
+
+  return {
+    code: product.code,
+    name: product.name,
+    brand: product.brand,
+    sellPrice: Number(metric.domesticSellPriceVnd),
+    premiumSellPct,
+    premiumPercentile:
+      metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d),
+    spreadPct: Number(metric.spreadPct),
+    score: Number(signal.score),
+    transitionTime: metric.time,
+    level: "Mua dần",
+    reasons: Array.isArray(signal.reasons) ? signal.reasons.map(String).slice(0, 3) : [],
+    type: "PREMIUM_DROP",
+    episode: level,
+    fingerprint: `${product.code}:premium-drop:${vietnamDate(metric.time)}:${level}`
+  };
+}
 
 export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCandidate[] {
   return products
@@ -255,20 +363,44 @@ export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCan
     });
 }
 
-async function findPendingAlertEvents(prisma: PrismaClient, now: Date): Promise<AlertCandidate[]> {
+async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: Redis): Promise<AlertCandidate[]> {
   const products = await prisma.goldProduct.findMany({
     where: { isActive: true },
     include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 2 } }
   });
   for (const product of products) {
-    const previous = await prisma.buyAlertEvent.findFirst({ where: { productId: product.id }, orderBy: { occurredAt: "desc" }, select: { episode: true, score: true, premiumSellPct: true } });
-    const selection = selectBuyDcaAlertEvent(product, previous ? { episode: previous.episode, score: Number(previous.score), premiumSellPct: Number(previous.premiumSellPct) } : null);
-    if (!selection) continue;
-    await prisma.buyAlertEvent.upsert({
-      where: { fingerprint: selection.fingerprint },
-      update: {},
-      create: { productId: product.id, episode: selection.episode, type: selection.type, fingerprint: selection.fingerprint, occurredAt: selection.transitionTime, score: selection.score, premiumSellPct: selection.premiumSellPct, spreadPct: selection.spreadPct, sellPriceVnd: selection.sellPrice, reasons: selection.reasons }
+    const previous = await prisma.buyAlertEvent.findFirst({
+      where: { productId: product.id, type: { in: ["ENTERED_BUY_DCA", "BUY_DCA_IMPROVED"] } },
+      orderBy: { occurredAt: "desc" },
+      select: { episode: true, score: true, premiumSellPct: true }
     });
+    const selection = selectBuyDcaAlertEvent(product, previous ? { episode: previous.episode, score: Number(previous.score), premiumSellPct: Number(previous.premiumSellPct) } : null);
+    let premiumSelection: AlertEventSelection | null = null;
+    if (product.code === "DOJI_RING_9999") {
+      const snapshotPremium = redis
+        ? await loadPreviousTradingDayPremiumFromSnapshot(redis, product.code, now)
+        : null;
+      const fallbackPremium = snapshotPremium === null
+        ? await prisma.goldMetric.findFirst({
+            where: { productId: product.id, time: { lt: vietnamStartOfToday(now) } },
+            orderBy: { time: "desc" },
+            select: { premiumSellPct: true }
+          })
+        : null;
+      premiumSelection = selectPremiumDropAlertEvent(
+        product,
+        snapshotPremium ?? (fallbackPremium ? Number(fallbackPremium.premiumSellPct) : null),
+        now
+      );
+    }
+    for (const event of [selection, premiumSelection]) {
+      if (!event) continue;
+      await prisma.buyAlertEvent.upsert({
+        where: { fingerprint: event.fingerprint },
+        update: {},
+        create: { productId: product.id, episode: event.episode, type: event.type, fingerprint: event.fingerprint, occurredAt: event.transitionTime, score: event.score, premiumSellPct: event.premiumSellPct, spreadPct: event.spreadPct, sellPriceVnd: event.sellPrice, reasons: event.reasons }
+      });
+    }
   }
   const events = await prisma.buyAlertEvent.findMany({
     where: { occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
@@ -278,7 +410,7 @@ async function findPendingAlertEvents(prisma: PrismaClient, now: Date): Promise<
     const metric = event.product.goldMetrics[0];
     const signal = event.product.signalSnapshots[0];
     return metric && signal && signal.signal === "BUY_DCA" && metric.time.getTime() === signal.time.getTime() && now.getTime() - metric.time.getTime() <= 15 * 60 * 1000;
-  }).map((event) => ({ eventId: event.id, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+  }).map((event) => ({ eventId: event.id, eventType: event.type, episode: event.episode, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
   return deduplicateAlertCandidates(candidates);
 }
 
@@ -350,20 +482,30 @@ async function createTransporter(): Promise<MailerTransport | null> {
 }
 
 function buildSubject(candidates: AlertCandidate[]): string {
+  if (candidates.length === 1 && candidates[0]?.eventType === "PREMIUM_DROP") {
+    const drop = (candidates[0].episode ?? 1) * 0.5;
+    return `VangScore: DOJI premium giảm ít nhất ${drop.toLocaleString("vi-VN")} điểm %`;
+  }
   return candidates.length > 1
     ? `VangScore: ${candidates.length} sản phẩm vừa chuyển sang mua dần`
     : "VangScore: Có sản phẩm vừa chuyển sang mua dần";
 }
 
 function buildText(candidates: AlertCandidate[]): string {
+  const hasPremiumDrop = candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP");
   const lines = [
-    "VangScore phát hiện sản phẩm vừa chuyển sang tín hiệu mua dần.",
+    hasPremiumDrop
+      ? "VangScore phát hiện premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu đang là mua dần."
+      : "VangScore phát hiện sản phẩm vừa chuyển sang tín hiệu mua dần.",
     "",
     ...candidates.flatMap((candidate, index) => [
       `${index + 1}. ${candidate.name} (${candidate.brand})`,
       `Mức: ${candidate.level}`,
       `Giá bán: ${formatVnd(candidate.sellPrice)}`,
       `Premium: ${formatPercent(candidate.premiumSellPct)}`,
+      ...(candidate.eventType === "PREMIUM_DROP"
+        ? [`Mức giảm premium: ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`]
+        : []),
       `Spread: ${formatPercent(candidate.spreadPct)}`,
       `VangScore: ${candidate.score}`,
       ""
@@ -385,6 +527,7 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;color:#e2e8f0;font-size:14px;">
               <tr><td style="padding:5px 0;color:#94a3b8;">Giá bán</td><td align="right" style="padding:5px 0;font-weight:700;">${formatVnd(candidate.sellPrice)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">Premium</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.premiumSellPct)}</td></tr>
+              ${candidate.eventType === "PREMIUM_DROP" ? `<tr><td style="padding:5px 0;color:#94a3b8;">Mức giảm premium</td><td align="right" style="padding:5px 0;">Ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %</td></tr>` : ""}
               <tr><td style="padding:5px 0;color:#94a3b8;">Spread</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.spreadPct)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">VangScore</td><td align="right" style="padding:5px 0;">${candidate.score}</td></tr>
             </table>
@@ -408,8 +551,8 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <tr>
               <td style="padding:28px 28px 18px;">
                 <div style="display:inline-block;padding:7px 10px;border-radius:8px;background:rgba(250,204,21,0.12);color:#facc15;font-size:13px;font-weight:700;">VangScore Alert</div>
-                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">Có tín hiệu mua dần vàng</h1>
-                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Tín hiệu mới nhất vừa chuyển sang BUY_DCA (mua dần).</p>
+                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">${candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP") ? "Premium DOJI đang giảm" : "Có tín hiệu mua dần vàng"}</h1>
+                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">${candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP") ? "Premium DOJI giảm so với ngày giao dịch gần nhất, đồng thời tín hiệu vẫn là BUY_DCA (mua dần)." : "Tín hiệu mới nhất vừa chuyển sang BUY_DCA (mua dần)."}</p>
               </td>
             </tr>
             <tr><td style="padding:0 28px 18px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-spacing:0 12px;">${productCards}</table></td></tr>

@@ -212,6 +212,10 @@ The worker evaluates buy-alert events for each product and episode:
 Temporary testing mode: alert delivery is currently restricted to the active subscriber
 `doanthanhtung.pc@gmail.com`; other registered emails are skipped until the notify-email flow is ready.
 
+For `DOJI_RING_9999`, the worker also sends a test alert when the current signal is `BUY_DCA`
+and selling premium is at least 0.5 percentage points below the last available Vietnam-day
+premium. Each additional 0.5 percentage-point drop creates one additional alert level.
+
 ## Deployment
 
 ### Home server with Cloudflare Tunnel
