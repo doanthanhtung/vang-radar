@@ -3,6 +3,7 @@ import {
   canDispatchNotification,
   deduplicateAlertCandidates,
   isUnlimitedAlertRecipient,
+  selectTemporaryAlertRecipients,
   selectBuyDcaAlertEvent,
   selectBuyDcaTransitions
 } from "../src/jobs/buy-alerts.js";
@@ -126,5 +127,26 @@ describe("isUnlimitedAlertRecipient", () => {
 
   it("does not bypass limits for other recipients", () => {
     expect(isUnlimitedAlertRecipient("other@example.com")).toBe(false);
+  });
+});
+
+describe("selectTemporaryAlertRecipients", () => {
+  it("keeps only the temporary notify test email", () => {
+    expect(
+      selectTemporaryAlertRecipients([
+        { id: "test-recipient", email: "doanthanhtung.pc@gmail.com", unsubscribeVersion: 1 },
+        { id: "other-recipient", email: "other@example.com", unsubscribeVersion: 1 }
+      ])
+    ).toEqual([
+      { id: "test-recipient", email: "doanthanhtung.pc@gmail.com", unsubscribeVersion: 1 }
+    ]);
+  });
+
+  it("does not select a different email even when it is active", () => {
+    expect(
+      selectTemporaryAlertRecipients([
+        { id: "other-recipient", email: "other@example.com", unsubscribeVersion: 1 }
+      ])
+    ).toEqual([]);
   });
 });

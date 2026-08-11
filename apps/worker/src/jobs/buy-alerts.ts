@@ -77,11 +77,11 @@ async function sendBuyAlertsUnlocked(prisma: PrismaClient) {
   const now = new Date();
   const pending = await findPendingAlertEvents(prisma, now);
   if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
-  const subscribers = await prisma.notificationSubscriber.findMany({
+  const subscribers = selectTemporaryAlertRecipients(await prisma.notificationSubscriber.findMany({
     where: { status: "active", buyAlertEnabled: true },
     orderBy: { subscribedAt: "asc" },
     select: { id: true, email: true, unsubscribeVersion: true }
-  });
+  }));
   if (subscribers.length === 0) return { sent: 0, skipped: "no_eligible_subscribers", candidates: pending.length };
 
   const transporter = await createTransporter();
@@ -146,6 +146,10 @@ export function canDispatchNotification(sentAt: Date[], now: Date): boolean {
 
 export function isUnlimitedAlertRecipient(email: string): boolean {
   return email.trim().toLowerCase() === UNLIMITED_ALERT_EMAIL;
+}
+
+export function selectTemporaryAlertRecipients<T extends { email: string }>(subscribers: T[]): T[] {
+  return subscribers.filter((subscriber) => isUnlimitedAlertRecipient(subscriber.email));
 }
 
 export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {

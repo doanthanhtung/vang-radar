@@ -209,6 +209,9 @@ The worker evaluates buy-alert events for each product and episode:
 - Pending events expire after 24 hours and are sent only while the product remains in `BUY_DCA`.
 - A single email groups all eligible unsent events for that subscriber.
 
+Temporary testing mode: alert delivery is currently restricted to the active subscriber
+`doanthanhtung.pc@gmail.com`; other registered emails are skipped until the notify-email flow is ready.
+
 ## Deployment
 
 ### Home server with Cloudflare Tunnel
