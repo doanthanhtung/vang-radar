@@ -198,10 +198,10 @@ Visitor access tracking endpoints are intentionally not present.
 
 ## Email alert behavior
 
-The worker evaluates buy-alert events for each product and episode:
+The worker evaluates premium-drop events for `DOJI_RING_9999`:
 
-- An episode begins when a product enters `BUY_DCA`.
-- An improvement event is created when the score rises by at least three points or selling premium falls by at least 0.5 percentage points.
+- An event is created when the current `BUY_DCA` signal has a selling premium at least 0.5 percentage points below the last available Vietnam-day premium.
+- Each additional 0.5 percentage-point drop creates a new alert level.
 - Events are deduplicated by fingerprint.
 - Only fresh, timestamp-aligned metric and signal data is eligible.
 - A subscriber must be active with buy alerts enabled.

@@ -39,18 +39,12 @@ type AlertCandidate = {
   spreadPct: number;
   score: number;
   transitionTime: Date;
-  level: "Mua dần";
+  level: "Premium giảm";
   reasons: string[];
 };
 
-export type AlertEventBaseline = {
-  score: number;
-  premiumSellPct: number;
-  episode: number;
-};
-
 export type AlertEventSelection = AlertCandidate & {
-  type: "ENTERED_BUY_DCA" | "BUY_DCA_IMPROVED" | "PREMIUM_DROP";
+  type: "PREMIUM_DROP";
   episode: number;
   fingerprint: string;
 };
@@ -306,61 +300,12 @@ export function selectPremiumDropAlertEvent(
     spreadPct: Number(metric.spreadPct),
     score: Number(signal.score),
     transitionTime: metric.time,
-    level: "Mua dần",
+    level: "Premium giảm",
     reasons: Array.isArray(signal.reasons) ? signal.reasons.map(String).slice(0, 3) : [],
     type: "PREMIUM_DROP",
     episode: level,
     fingerprint: `${product.code}:premium-drop:${vietnamDate(metric.time)}:${level}`
   };
-}
-
-export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCandidate[] {
-  return products
-    .map((product): AlertCandidate | null => {
-      const metric = product.goldMetrics[0];
-      const currentSignal = product.signalSnapshots[0];
-      const previousSignal = product.signalSnapshots[1];
-      if (
-        !metric ||
-        !currentSignal ||
-        !previousSignal ||
-        metric.time.getTime() !== currentSignal.time.getTime() ||
-        currentSignal.signal !== "BUY_DCA" ||
-        previousSignal.signal === "BUY_DCA"
-      ) {
-        return null;
-      }
-
-      const score = Number(currentSignal.score);
-      const premiumSellPct = Number(metric.premiumSellPct);
-      const premiumPercentile =
-        metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d);
-      const spreadPct = Number(metric.spreadPct);
-
-      return {
-        code: product.code,
-        name: product.name,
-        brand: product.brand,
-        sellPrice: Number(metric.domesticSellPriceVnd),
-        premiumSellPct,
-        premiumPercentile,
-        spreadPct,
-        score,
-        transitionTime: currentSignal.time,
-        level: "Mua dần",
-        reasons: Array.isArray(currentSignal.reasons)
-          ? currentSignal.reasons.map((reason) => String(reason)).slice(0, 3)
-          : []
-      };
-    })
-    .filter((candidate): candidate is AlertCandidate => candidate !== null)
-    .sort((left, right) => {
-      if (left.premiumSellPct !== right.premiumSellPct) {
-        return left.premiumSellPct - right.premiumSellPct;
-      }
-      if (left.spreadPct !== right.spreadPct) return left.spreadPct - right.spreadPct;
-      return right.score - left.score;
-    });
 }
 
 async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: Redis): Promise<AlertCandidate[]> {
@@ -369,13 +314,6 @@ async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: R
     include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 2 } }
   });
   for (const product of products) {
-    const previous = await prisma.buyAlertEvent.findFirst({
-      where: { productId: product.id, type: { in: ["ENTERED_BUY_DCA", "BUY_DCA_IMPROVED"] } },
-      orderBy: { occurredAt: "desc" },
-      select: { episode: true, score: true, premiumSellPct: true }
-    });
-    const selection = selectBuyDcaAlertEvent(product, previous ? { episode: previous.episode, score: Number(previous.score), premiumSellPct: Number(previous.premiumSellPct) } : null);
-    let premiumSelection: AlertEventSelection | null = null;
     if (product.code === "DOJI_RING_9999") {
       const snapshotPremium = redis
         ? await loadPreviousTradingDayPremiumFromSnapshot(redis, product.code, now)
@@ -387,73 +325,29 @@ async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: R
             select: { premiumSellPct: true }
           })
         : null;
-      premiumSelection = selectPremiumDropAlertEvent(
+      const premiumSelection = selectPremiumDropAlertEvent(
         product,
         snapshotPremium ?? (fallbackPremium ? Number(fallbackPremium.premiumSellPct) : null),
         now
       );
-    }
-    for (const event of [selection, premiumSelection]) {
-      if (!event) continue;
+      if (!premiumSelection) continue;
       await prisma.buyAlertEvent.upsert({
-        where: { fingerprint: event.fingerprint },
+        where: { fingerprint: premiumSelection.fingerprint },
         update: {},
-        create: { productId: product.id, episode: event.episode, type: event.type, fingerprint: event.fingerprint, occurredAt: event.transitionTime, score: event.score, premiumSellPct: event.premiumSellPct, spreadPct: event.spreadPct, sellPriceVnd: event.sellPrice, reasons: event.reasons }
+        create: { productId: product.id, episode: premiumSelection.episode, type: premiumSelection.type, fingerprint: premiumSelection.fingerprint, occurredAt: premiumSelection.transitionTime, score: premiumSelection.score, premiumSellPct: premiumSelection.premiumSellPct, spreadPct: premiumSelection.spreadPct, sellPriceVnd: premiumSelection.sellPrice, reasons: premiumSelection.reasons }
       });
     }
   }
   const events = await prisma.buyAlertEvent.findMany({
-    where: { occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
+    where: { type: "PREMIUM_DROP", occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
     include: { product: { include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 1 } } } }, orderBy: { occurredAt: "asc" }
   });
   const candidates = events.filter((event) => {
     const metric = event.product.goldMetrics[0];
     const signal = event.product.signalSnapshots[0];
     return metric && signal && signal.signal === "BUY_DCA" && metric.time.getTime() === signal.time.getTime() && now.getTime() - metric.time.getTime() <= 15 * 60 * 1000;
-  }).map((event) => ({ eventId: event.id, eventType: event.type, episode: event.episode, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Mua dần" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+  }).map((event) => ({ eventId: event.id, eventType: event.type, episode: event.episode, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Premium giảm" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
   return deduplicateAlertCandidates(candidates);
-}
-
-export function selectBuyDcaAlertEvent(
-  product: TransitionProduct,
-  baseline: AlertEventBaseline | null
-): AlertEventSelection | null {
-  const metric = product.goldMetrics[0];
-  const currentSignal = product.signalSnapshots[0];
-  if (!metric || !currentSignal || currentSignal.signal !== "BUY_DCA" || metric.time.getTime() !== currentSignal.time.getTime()) return null;
-  const candidate: AlertCandidate = {
-    code: product.code,
-    name: product.name,
-    brand: product.brand,
-    sellPrice: Number(metric.domesticSellPriceVnd),
-    premiumSellPct: Number(metric.premiumSellPct),
-    premiumPercentile: metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d),
-    spreadPct: Number(metric.spreadPct),
-    score: Number(currentSignal.score),
-    transitionTime: currentSignal.time,
-    level: "Mua dần",
-    reasons: Array.isArray(currentSignal.reasons) ? currentSignal.reasons.map(String).slice(0, 3) : []
-  };
-
-  const isTransition = product.signalSnapshots[1]?.signal !== "BUY_DCA";
-  if (!baseline || isTransition) {
-    return {
-      ...candidate,
-      type: "ENTERED_BUY_DCA",
-      episode: isTransition ? (baseline?.episode ?? 0) + 1 : baseline?.episode ?? 1,
-      fingerprint: `${product.code}:episode:${isTransition ? (baseline?.episode ?? 0) + 1 : baseline?.episode ?? 1}:${isTransition ? candidate.transitionTime.toISOString() : "bootstrap"}`
-    };
-  }
-
-  if (candidate.score < baseline.score + 3 && candidate.premiumSellPct > baseline.premiumSellPct - 0.005) {
-    return null;
-  }
-  return {
-    ...candidate,
-    type: "BUY_DCA_IMPROVED",
-    episode: baseline.episode,
-    fingerprint: `${product.code}:episode:${baseline.episode}:improved:${candidate.transitionTime.toISOString()}`
-  };
 }
 
 async function createTransporter(): Promise<MailerTransport | null> {
@@ -482,30 +376,21 @@ async function createTransporter(): Promise<MailerTransport | null> {
 }
 
 function buildSubject(candidates: AlertCandidate[]): string {
-  if (candidates.length === 1 && candidates[0]?.eventType === "PREMIUM_DROP") {
-    const drop = (candidates[0].episode ?? 1) * 0.5;
-    return `VangScore: DOJI premium giảm ít nhất ${drop.toLocaleString("vi-VN")} điểm %`;
-  }
   return candidates.length > 1
-    ? `VangScore: ${candidates.length} sản phẩm vừa chuyển sang mua dần`
-    : "VangScore: Có sản phẩm vừa chuyển sang mua dần";
+    ? `VangScore: ${candidates.length} cảnh báo premium DOJI mới`
+    : `VangScore: DOJI premium giảm ít nhất ${((candidates[0]?.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`;
 }
 
 function buildText(candidates: AlertCandidate[]): string {
-  const hasPremiumDrop = candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP");
   const lines = [
-    hasPremiumDrop
-      ? "VangScore phát hiện premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu đang là mua dần."
-      : "VangScore phát hiện sản phẩm vừa chuyển sang tín hiệu mua dần.",
+    "VangScore phát hiện premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu đang là BUY_DCA.",
     "",
     ...candidates.flatMap((candidate, index) => [
       `${index + 1}. ${candidate.name} (${candidate.brand})`,
       `Mức: ${candidate.level}`,
       `Giá bán: ${formatVnd(candidate.sellPrice)}`,
       `Premium: ${formatPercent(candidate.premiumSellPct)}`,
-      ...(candidate.eventType === "PREMIUM_DROP"
-        ? [`Mức giảm premium: ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`]
-        : []),
+      `Mức giảm premium: ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`,
       `Spread: ${formatPercent(candidate.spreadPct)}`,
       `VangScore: ${candidate.score}`,
       ""
@@ -527,7 +412,7 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;color:#e2e8f0;font-size:14px;">
               <tr><td style="padding:5px 0;color:#94a3b8;">Giá bán</td><td align="right" style="padding:5px 0;font-weight:700;">${formatVnd(candidate.sellPrice)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">Premium</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.premiumSellPct)}</td></tr>
-              ${candidate.eventType === "PREMIUM_DROP" ? `<tr><td style="padding:5px 0;color:#94a3b8;">Mức giảm premium</td><td align="right" style="padding:5px 0;">Ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %</td></tr>` : ""}
+              <tr><td style="padding:5px 0;color:#94a3b8;">Mức giảm premium</td><td align="right" style="padding:5px 0;">Ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">Spread</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.spreadPct)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">VangScore</td><td align="right" style="padding:5px 0;">${candidate.score}</td></tr>
             </table>
@@ -551,8 +436,8 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <tr>
               <td style="padding:28px 28px 18px;">
                 <div style="display:inline-block;padding:7px 10px;border-radius:8px;background:rgba(250,204,21,0.12);color:#facc15;font-size:13px;font-weight:700;">VangScore Alert</div>
-                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">${candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP") ? "Premium DOJI đang giảm" : "Có tín hiệu mua dần vàng"}</h1>
-                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">${candidates.some((candidate) => candidate.eventType === "PREMIUM_DROP") ? "Premium DOJI giảm so với ngày giao dịch gần nhất, đồng thời tín hiệu vẫn là BUY_DCA (mua dần)." : "Tín hiệu mới nhất vừa chuyển sang BUY_DCA (mua dần)."}</p>
+                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">Premium DOJI đang giảm</h1>
+                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu hiện tại là BUY_DCA.</p>
               </td>
             </tr>
             <tr><td style="padding:0 28px 18px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-spacing:0 12px;">${productCards}</table></td></tr>
