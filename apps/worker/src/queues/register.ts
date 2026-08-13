@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { loadConfig } from "@vang-radar/config";
 import { calculateLatestMetrics } from "../calculators/metrics.js";
 import { sendBuyAlerts } from "../jobs/buy-alerts.js";
-import { refreshMarketSnapshot } from "../jobs/market-pipeline.js";
+import { refreshAndSendBuyAlerts } from "../jobs/market-pipeline.js";
 import {
   fetchDomesticGold,
   fetchFx,
@@ -42,7 +42,7 @@ export function registerQueues(prisma: PrismaClient) {
     "calculate-metrics": () => calculateLatestMetrics(prisma, cacheClient),
     "generate-signals": () => generateLatestSignals(prisma),
     "send-buy-alerts": () => sendBuyAlerts(prisma, cacheClient),
-    "refresh-market-summary-cache": () => refreshMarketSnapshot(prisma, cacheClient)
+    "refresh-market-summary-cache": () => refreshAndSendBuyAlerts(prisma, cacheClient)
   };
 
   const workers = queueNames.map(
@@ -58,10 +58,10 @@ export function registerQueues(prisma: PrismaClient) {
 
 export async function scheduleJobs(queues: Queue[]) {
   const byName = Object.fromEntries(queues.map((queue) => [queue.name, queue]));
-  await byName["send-buy-alerts"]?.add(
+  await byName["send-buy-alerts"]?.removeRepeatable(
     "scheduled",
-    {},
-    { repeat: { pattern: "2-57/5 * * * *" }, jobId: "send-buy-alerts" }
+    { pattern: "2-57/5 * * * *" },
+    "send-buy-alerts"
   );
   await byName["refresh-market-summary-cache"]?.add(
     "scheduled",

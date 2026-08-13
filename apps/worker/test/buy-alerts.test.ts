@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   canDispatchNotification,
+  applyCurrentMetricToAlertCandidate,
   deduplicateAlertCandidates,
   findPreviousTradingDayPremium,
   isUnlimitedAlertRecipient,
   loadPreviousTradingDayPremiumFromSnapshot,
   selectPremiumDropAlertEvent,
-  selectTemporaryAlertRecipients,
+  selectTemporaryAlertRecipients
 } from "../src/jobs/buy-alerts.js";
 
 describe("deduplicateAlertCandidates", () => {
@@ -35,6 +36,39 @@ describe("deduplicateAlertCandidates", () => {
     };
 
     expect(deduplicateAlertCandidates([first, second])).toEqual([first, second]);
+  });
+});
+
+describe("applyCurrentMetricToAlertCandidate", () => {
+  it("uses the latest snapshot metric values instead of stale event values", () => {
+    const candidate = {
+      eventId: "event-1",
+      eventType: "PREMIUM_DROP",
+      episode: 1,
+      code: "DOJI_RING_9999",
+      name: "Nhẫn 9999 DOJI",
+      brand: "DOJI",
+      sellPrice: 100_000_000,
+      premiumSellPct: 0.0454,
+      premiumPercentile: null,
+      spreadPct: 0.02,
+      score: 72,
+      transitionTime: new Date("2026-08-08T08:00:00.000Z"),
+      level: "Premium giảm" as const,
+      reasons: []
+    };
+
+    expect(
+      applyCurrentMetricToAlertCandidate(candidate, {
+        domesticSellPriceVnd: 101_000_000,
+        premiumSellPct: 0.0473,
+        spreadPct: 0.021
+      })
+    ).toMatchObject({
+      sellPrice: 101_000_000,
+      premiumSellPct: 0.0473,
+      spreadPct: 0.021
+    });
   });
 });
 

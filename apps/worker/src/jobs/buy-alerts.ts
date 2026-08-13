@@ -43,6 +43,24 @@ type AlertCandidate = {
   reasons: string[];
 };
 
+type CurrentMetric = {
+  domesticSellPriceVnd: unknown;
+  premiumSellPct: unknown;
+  spreadPct: unknown;
+};
+
+export function applyCurrentMetricToAlertCandidate(
+  candidate: AlertCandidate,
+  metric: CurrentMetric
+): AlertCandidate {
+  return {
+    ...candidate,
+    sellPrice: Number(metric.domesticSellPriceVnd),
+    premiumSellPct: Number(metric.premiumSellPct),
+    spreadPct: Number(metric.spreadPct)
+  };
+}
+
 export type AlertEventSelection = AlertCandidate & {
   type: "PREMIUM_DROP";
   episode: number;
@@ -57,7 +75,7 @@ const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 const ALERT_LOCK_TTL_MS = 30 * 60 * 1000;
 const UNLIMITED_ALERT_EMAIL = "doanthanhtung.pc@gmail.com";
 
-export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis) {
+export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis, snapshotId?: string) {
   if (!redis) return sendBuyAlertsUnlocked(prisma);
 
   const token = randomUUID();
@@ -66,22 +84,25 @@ export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis) {
   }
 
   try {
-    return await sendBuyAlertsUnlocked(prisma, redis);
+    return await sendBuyAlertsUnlocked(prisma, redis, snapshotId);
   } finally {
     await releaseAlertLock(redis, token);
   }
 }
 
-async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis) {
+async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis, snapshotId?: string) {
   const now = new Date();
-  const pending = await findPendingAlertEvents(prisma, now, redis);
+  const pending = await findPendingAlertEvents(prisma, now, redis, snapshotId);
   if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
-  const subscribers = selectTemporaryAlertRecipients(await prisma.notificationSubscriber.findMany({
-    where: { status: "active", buyAlertEnabled: true },
-    orderBy: { subscribedAt: "asc" },
-    select: { id: true, email: true, unsubscribeVersion: true }
-  }));
-  if (subscribers.length === 0) return { sent: 0, skipped: "no_eligible_subscribers", candidates: pending.length };
+  const subscribers = selectTemporaryAlertRecipients(
+    await prisma.notificationSubscriber.findMany({
+      where: { status: "active", buyAlertEnabled: true },
+      orderBy: { subscribedAt: "asc" },
+      select: { id: true, email: true, unsubscribeVersion: true }
+    })
+  );
+  if (subscribers.length === 0)
+    return { sent: 0, skipped: "no_eligible_subscribers", candidates: pending.length };
 
   const transporter = await createTransporter();
   if (!transporter) {
@@ -99,16 +120,24 @@ async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis) {
       });
       if (
         !isUnlimitedAlertRecipient(subscriber.email) &&
-        !canDispatchNotification(deliveries.map((delivery) => delivery.sentAt), now)
+        !canDispatchNotification(
+          deliveries.map((delivery) => delivery.sentAt),
+          now
+        )
       ) {
         continue;
       }
       const delivered = await prisma.buyAlertDelivery.findMany({
-        where: { subscriberId: subscriber.id, eventId: { in: pending.map((candidate) => candidate.eventId!) } },
+        where: {
+          subscriberId: subscriber.id,
+          eventId: { in: pending.map((candidate) => candidate.eventId!) }
+        },
         select: { eventId: true }
       });
       const deliveredIds = new Set(delivered.map((delivery) => delivery.eventId));
-      const selected = pending.filter((candidate) => candidate.eventId && !deliveredIds.has(candidate.eventId));
+      const selected = pending.filter(
+        (candidate) => candidate.eventId && !deliveredIds.has(candidate.eventId)
+      );
       if (selected.length === 0) continue;
       const headers = buildUnsubscribeHeaders(subscriber);
       await transporter.sendMail({
@@ -120,10 +149,17 @@ async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis) {
         ...(headers ? { headers } : {})
       });
       await prisma.buyAlertDelivery.createMany({
-        data: selected.map((candidate) => ({ eventId: candidate.eventId!, subscriberId: subscriber.id, sentAt: now })),
+        data: selected.map((candidate) => ({
+          eventId: candidate.eventId!,
+          subscriberId: subscriber.id,
+          sentAt: now
+        })),
         skipDuplicates: true
       });
-      await prisma.notificationSubscriber.update({ where: { id: subscriber.id }, data: { lastNotifiedAt: now, notificationCount: { increment: 1 } } });
+      await prisma.notificationSubscriber.update({
+        where: { id: subscriber.id },
+        data: { lastNotifiedAt: now, notificationCount: { increment: 1 } }
+      });
       sent += 1;
     } catch (error) {
       logger.error(
@@ -154,9 +190,10 @@ export function selectTemporaryAlertRecipients<T extends { email: string }>(subs
 export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {
   const latestByProduct = new Map<string, AlertCandidate>();
   for (const candidate of candidates) {
-    const key = candidate.eventType === "PREMIUM_DROP"
-      ? `${candidate.code}:${candidate.eventType}:${candidate.episode ?? 0}`
-      : candidate.code;
+    const key =
+      candidate.eventType === "PREMIUM_DROP"
+        ? `${candidate.code}:${candidate.eventType}:${candidate.episode ?? 0}`
+        : candidate.code;
     const existing = latestByProduct.get(key);
     if (!existing || candidate.transitionTime > existing.transitionTime) {
       latestByProduct.set(key, candidate);
@@ -174,7 +211,10 @@ export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertC
   });
 }
 
-function buildUnsubscribeHeaders(subscriber: { id: string; unsubscribeVersion: number }): Record<string, string> | undefined {
+function buildUnsubscribeHeaders(subscriber: {
+  id: string;
+  unsubscribeVersion: number;
+}): Record<string, string> | undefined {
   const config = loadConfig();
   if (!config.EMAIL_UNSUBSCRIBE_SECRET) return undefined;
   const token = createUnsubscribeToken({
@@ -229,7 +269,10 @@ function vietnamStartOfToday(now: Date): Date {
   );
 }
 
-export function findPreviousTradingDayPremium(points: PremiumHistoryPoint[], now: Date): number | null {
+export function findPreviousTradingDayPremium(
+  points: PremiumHistoryPoint[],
+  now: Date
+): number | null {
   const cutoff = vietnamStartOfToday(now).getTime();
   const previous = points
     .map((point) => ({ time: new Date(point.time), premiumSellPct: Number(point.premiumSellPct) }))
@@ -246,15 +289,20 @@ export function findPreviousTradingDayPremium(points: PremiumHistoryPoint[], now
 export async function loadPreviousTradingDayPremiumFromSnapshot(
   redis: SnapshotReader,
   productCode: string,
-  now: Date
+  now: Date,
+  snapshotId?: string
 ): Promise<number | null> {
   try {
-    const pointer = await redis.get("market:snapshot:current");
-    if (!pointer) return null;
-    const parsedPointer = JSON.parse(pointer) as { snapshotId?: unknown };
-    if (typeof parsedPointer.snapshotId !== "string") return null;
+    let effectiveSnapshotId = snapshotId;
+    if (!effectiveSnapshotId) {
+      const pointer = await redis.get("market:snapshot:current");
+      if (!pointer) return null;
+      const parsedPointer = JSON.parse(pointer) as { snapshotId?: unknown };
+      if (typeof parsedPointer.snapshotId !== "string") return null;
+      effectiveSnapshotId = parsedPointer.snapshotId;
+    }
     const history = await redis.get(
-      `market:snapshot:${parsedPointer.snapshotId}:product:${productCode}:metrics:history:1y`
+      `market:snapshot:${effectiveSnapshotId}:product:${productCode}:metrics:history:1y`
     );
     if (!history) return null;
     const parsedHistory = JSON.parse(history);
@@ -308,23 +356,32 @@ export function selectPremiumDropAlertEvent(
   };
 }
 
-async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: Redis): Promise<AlertCandidate[]> {
+async function findPendingAlertEvents(
+  prisma: PrismaClient,
+  now: Date,
+  redis?: Redis,
+  snapshotId?: string
+): Promise<AlertCandidate[]> {
   const products = await prisma.goldProduct.findMany({
     where: { isActive: true },
-    include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 2 } }
+    include: {
+      goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+      signalSnapshots: { orderBy: { time: "desc" }, take: 2 }
+    }
   });
   for (const product of products) {
     if (product.code === "DOJI_RING_9999") {
       const snapshotPremium = redis
-        ? await loadPreviousTradingDayPremiumFromSnapshot(redis, product.code, now)
+        ? await loadPreviousTradingDayPremiumFromSnapshot(redis, product.code, now, snapshotId)
         : null;
-      const fallbackPremium = snapshotPremium === null
-        ? await prisma.goldMetric.findFirst({
-            where: { productId: product.id, time: { lt: vietnamStartOfToday(now) } },
-            orderBy: { time: "desc" },
-            select: { premiumSellPct: true }
-          })
-        : null;
+      const fallbackPremium =
+        snapshotPremium === null
+          ? await prisma.goldMetric.findFirst({
+              where: { productId: product.id, time: { lt: vietnamStartOfToday(now) } },
+              orderBy: { time: "desc" },
+              select: { premiumSellPct: true }
+            })
+          : null;
       const premiumSelection = selectPremiumDropAlertEvent(
         product,
         snapshotPremium ?? (fallbackPremium ? Number(fallbackPremium.premiumSellPct) : null),
@@ -334,19 +391,70 @@ async function findPendingAlertEvents(prisma: PrismaClient, now: Date, redis?: R
       await prisma.buyAlertEvent.upsert({
         where: { fingerprint: premiumSelection.fingerprint },
         update: {},
-        create: { productId: product.id, episode: premiumSelection.episode, type: premiumSelection.type, fingerprint: premiumSelection.fingerprint, occurredAt: premiumSelection.transitionTime, score: premiumSelection.score, premiumSellPct: premiumSelection.premiumSellPct, spreadPct: premiumSelection.spreadPct, sellPriceVnd: premiumSelection.sellPrice, reasons: premiumSelection.reasons }
+        create: {
+          productId: product.id,
+          episode: premiumSelection.episode,
+          type: premiumSelection.type,
+          fingerprint: premiumSelection.fingerprint,
+          occurredAt: premiumSelection.transitionTime,
+          score: premiumSelection.score,
+          premiumSellPct: premiumSelection.premiumSellPct,
+          spreadPct: premiumSelection.spreadPct,
+          sellPriceVnd: premiumSelection.sellPrice,
+          reasons: premiumSelection.reasons
+        }
       });
     }
   }
   const events = await prisma.buyAlertEvent.findMany({
-    where: { type: "PREMIUM_DROP", occurredAt: { gte: new Date(now.getTime() - DAY_MS) }, product: { isActive: true } },
-    include: { product: { include: { goldMetrics: { orderBy: { time: "desc" }, take: 1 }, signalSnapshots: { orderBy: { time: "desc" }, take: 1 } } } }, orderBy: { occurredAt: "asc" }
+    where: {
+      type: "PREMIUM_DROP",
+      occurredAt: { gte: new Date(now.getTime() - DAY_MS) },
+      product: { isActive: true }
+    },
+    include: {
+      product: {
+        include: {
+          goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+          signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+        }
+      }
+    },
+    orderBy: { occurredAt: "asc" }
   });
-  const candidates = events.filter((event) => {
-    const metric = event.product.goldMetrics[0];
-    const signal = event.product.signalSnapshots[0];
-    return metric && signal && signal.signal === "BUY_DCA" && metric.time.getTime() === signal.time.getTime() && now.getTime() - metric.time.getTime() <= 15 * 60 * 1000;
-  }).map((event) => ({ eventId: event.id, eventType: event.type, episode: event.episode, code: event.product.code, name: event.product.name, brand: event.product.brand, sellPrice: Number(event.sellPriceVnd), premiumSellPct: Number(event.premiumSellPct), premiumPercentile: null, spreadPct: Number(event.spreadPct), score: Number(event.score), transitionTime: event.occurredAt, level: "Premium giảm" as const, reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : [] }));
+  const candidates = events
+    .filter((event) => {
+      const metric = event.product.goldMetrics[0];
+      const signal = event.product.signalSnapshots[0];
+      return (
+        metric &&
+        signal &&
+        signal.signal === "BUY_DCA" &&
+        metric.time.getTime() === signal.time.getTime() &&
+        now.getTime() - metric.time.getTime() <= 15 * 60 * 1000
+      );
+    })
+    .map((event) =>
+      applyCurrentMetricToAlertCandidate(
+        {
+          eventId: event.id,
+          eventType: event.type,
+          episode: event.episode,
+          code: event.product.code,
+          name: event.product.name,
+          brand: event.product.brand,
+          sellPrice: Number(event.sellPriceVnd),
+          premiumSellPct: Number(event.premiumSellPct),
+          premiumPercentile: null,
+          spreadPct: Number(event.spreadPct),
+          score: Number(event.score),
+          transitionTime: event.occurredAt,
+          level: "Premium giảm" as const,
+          reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : []
+        },
+        event.product.goldMetrics[0]!
+      )
+    );
   return deduplicateAlertCandidates(candidates);
 }
 
