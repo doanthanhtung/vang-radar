@@ -8,6 +8,7 @@ describe("ProductTable navigation", () => {
     const source = readFileSync(sourcePath, "utf8");
 
     expect(source).toContain("href={`/gold/${product.code}`}");
+    expect(source.match(/prefetch=\{false\}/g) ?? []).toHaveLength(2);
     expect(source).not.toContain("ProductDetailDialog");
     expect(source).not.toContain("getGoldPriceHistory");
     expect(source).not.toContain('aria-haspopup="dialog"');

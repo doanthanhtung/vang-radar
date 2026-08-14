@@ -11,7 +11,6 @@ import { enrichProductWithLiveSignal } from "../../../lib/vang-score";
 import { createPageMetadata } from "../../../lib/seo";
 import { formatVnd } from "../../../lib/utils";
 
-export const revalidate = 60;
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
