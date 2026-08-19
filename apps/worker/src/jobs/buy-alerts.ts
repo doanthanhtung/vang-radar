@@ -1,7 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
-import { loadConfig } from "@vang-radar/config";
+import { randomUUID } from "node:crypto";
+import type { Redis } from "ioredis";
+import { createUnsubscribeToken, loadConfig } from "@vang-radar/config";
 import { DISCLAIMER } from "@vang-radar/domain";
 import { createLogger } from "@vang-radar/logger";
+import { acquireAlertLock, releaseAlertLock } from "./alert-lock.js";
 
 const logger = createLogger("buy-alerts");
 
@@ -12,6 +15,7 @@ type MailerTransport = {
     subject: string;
     text: string;
     html: string;
+    headers?: Record<string, string>;
   }): Promise<unknown>;
 };
 
@@ -23,6 +27,9 @@ type NodemailerModule = {
 };
 
 type AlertCandidate = {
+  eventId?: string;
+  eventType?: string;
+  episode?: number;
   code: string;
   name: string;
   brand: string;
@@ -32,57 +39,126 @@ type AlertCandidate = {
   spreadPct: number;
   score: number;
   transitionTime: Date;
-  level: "Mua dần";
+  level: "Premium giảm";
   reasons: string[];
 };
 
-export async function sendBuyAlerts(prisma: PrismaClient) {
+type CurrentMetric = {
+  domesticSellPriceVnd: unknown;
+  premiumSellPct: unknown;
+  spreadPct: unknown;
+};
+
+export function applyCurrentMetricToAlertCandidate(
+  candidate: AlertCandidate,
+  metric: CurrentMetric
+): AlertCandidate {
+  return {
+    ...candidate,
+    sellPrice: Number(metric.domesticSellPriceVnd),
+    premiumSellPct: Number(metric.premiumSellPct),
+    spreadPct: Number(metric.spreadPct)
+  };
+}
+
+export type AlertEventSelection = AlertCandidate & {
+  type: "PREMIUM_DROP";
+  episode: number;
+  fingerprint: string;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MIN_GAP_MS = 8 * 60 * 60 * 1000;
+const FRESH_METRIC_MS = 15 * 60 * 1000;
+const PREMIUM_DROP_STEP = 0.005;
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+const ALERT_LOCK_TTL_MS = 30 * 60 * 1000;
+const UNLIMITED_ALERT_EMAIL = "doanthanhtung.pc@gmail.com";
+
+export async function sendBuyAlerts(prisma: PrismaClient, redis?: Redis, snapshotId?: string) {
+  if (!redis) return sendBuyAlertsUnlocked(prisma);
+
+  const token = randomUUID();
+  if (!(await acquireAlertLock(redis, token, ALERT_LOCK_TTL_MS))) {
+    return { sent: 0, skipped: "already_running" };
+  }
+
+  try {
+    return await sendBuyAlertsUnlocked(prisma, redis, snapshotId);
+  } finally {
+    await releaseAlertLock(redis, token);
+  }
+}
+
+async function sendBuyAlertsUnlocked(prisma: PrismaClient, redis?: Redis, snapshotId?: string) {
   const now = new Date();
-  const candidates = await findAlertCandidates(prisma);
-  if (candidates.length === 0) {
-    return { sent: 0, skipped: "no_candidates" };
-  }
-
-  const selected = candidates;
-  const latestTransitionTime = new Date(
-    Math.max(...selected.map((candidate) => candidate.transitionTime.getTime()))
+  const pending = await findPendingAlertEvents(prisma, now, redis, snapshotId);
+  if (pending.length === 0) return { sent: 0, skipped: "no_candidates" };
+  const subscribers = selectTemporaryAlertRecipients(
+    await prisma.notificationSubscriber.findMany({
+      where: { status: "active", buyAlertEnabled: true },
+      orderBy: { subscribedAt: "asc" },
+      select: { id: true, email: true, unsubscribeVersion: true }
+    })
   );
-  const subscribers = await prisma.notificationSubscriber.findMany({
-    where: {
-      status: "active",
-      buyAlertEnabled: true,
-      OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: latestTransitionTime } }]
-    },
-    orderBy: { subscribedAt: "asc" },
-    select: { id: true, email: true }
-  });
-
-  if (subscribers.length === 0) {
-    return { sent: 0, skipped: "no_eligible_subscribers", candidates: selected.length };
-  }
+  if (subscribers.length === 0)
+    return { sent: 0, skipped: "no_eligible_subscribers", candidates: pending.length };
 
   const transporter = await createTransporter();
   if (!transporter) {
-    return { sent: 0, skipped: "email_not_configured", candidates: selected.length };
+    return { sent: 0, skipped: "email_not_configured", candidates: pending.length };
   }
 
   const config = loadConfig();
   let sent = 0;
   for (const subscriber of subscribers) {
     try {
+      const deliveries = await prisma.buyAlertDelivery.findMany({
+        where: { subscriberId: subscriber.id, sentAt: { gte: new Date(now.getTime() - DAY_MS) } },
+        orderBy: { sentAt: "desc" },
+        select: { sentAt: true }
+      });
+      if (
+        !isUnlimitedAlertRecipient(subscriber.email) &&
+        !canDispatchNotification(
+          deliveries.map((delivery) => delivery.sentAt),
+          now
+        )
+      ) {
+        continue;
+      }
+      const delivered = await prisma.buyAlertDelivery.findMany({
+        where: {
+          subscriberId: subscriber.id,
+          eventId: { in: pending.map((candidate) => candidate.eventId!) }
+        },
+        select: { eventId: true }
+      });
+      const deliveredIds = new Set(delivered.map((delivery) => delivery.eventId));
+      const selected = pending.filter(
+        (candidate) => candidate.eventId && !deliveredIds.has(candidate.eventId)
+      );
+      if (selected.length === 0) continue;
+      const headers = buildUnsubscribeHeaders(subscriber);
       await transporter.sendMail({
         from: `"VangScore" <${config.EMAIL_SENDER}>`,
         to: subscriber.email,
         subject: buildSubject(selected),
         text: buildText(selected),
-        html: buildHtml(selected)
+        html: buildHtml(selected),
+        ...(headers ? { headers } : {})
+      });
+      await prisma.buyAlertDelivery.createMany({
+        data: selected.map((candidate) => ({
+          eventId: candidate.eventId!,
+          subscriberId: subscriber.id,
+          sentAt: now
+        })),
+        skipDuplicates: true
       });
       await prisma.notificationSubscriber.update({
         where: { id: subscriber.id },
-        data: {
-          lastNotifiedAt: now,
-          notificationCount: { increment: 1 }
-        }
+        data: { lastNotifiedAt: now, notificationCount: { increment: 1 } }
       });
       sent += 1;
     } catch (error) {
@@ -93,19 +169,64 @@ export async function sendBuyAlerts(prisma: PrismaClient) {
     }
   }
 
-  return { sent, candidates: selected.length };
+  return { sent, candidates: pending.length };
 }
 
-async function findAlertCandidates(prisma: PrismaClient): Promise<AlertCandidate[]> {
-  const products = await prisma.goldProduct.findMany({
-    where: { isActive: true },
-    include: {
-      goldMetrics: { orderBy: { time: "desc" }, take: 1 },
-      signalSnapshots: { orderBy: { time: "desc" }, take: 2 }
-    }
-  });
+export function canDispatchNotification(sentAt: Date[], now: Date): boolean {
+  const recent = sentAt.filter((date) => now.getTime() - date.getTime() < DAY_MS);
+  if (recent.length >= 2) return false;
+  const latest = recent.sort((left, right) => right.getTime() - left.getTime())[0];
+  return !latest || now.getTime() - latest.getTime() >= MIN_GAP_MS;
+}
 
-  return selectBuyDcaTransitions(products);
+export function isUnlimitedAlertRecipient(email: string): boolean {
+  return email.trim().toLowerCase() === UNLIMITED_ALERT_EMAIL;
+}
+
+export function selectTemporaryAlertRecipients<T extends { email: string }>(subscribers: T[]): T[] {
+  return subscribers.filter((subscriber) => isUnlimitedAlertRecipient(subscriber.email));
+}
+
+export function deduplicateAlertCandidates(candidates: AlertCandidate[]): AlertCandidate[] {
+  const latestByProduct = new Map<string, AlertCandidate>();
+  for (const candidate of candidates) {
+    const key =
+      candidate.eventType === "PREMIUM_DROP"
+        ? `${candidate.code}:${candidate.eventType}:${candidate.episode ?? 0}`
+        : candidate.code;
+    const existing = latestByProduct.get(key);
+    if (!existing || candidate.transitionTime > existing.transitionTime) {
+      latestByProduct.set(key, candidate);
+    }
+  }
+  return [...latestByProduct.values()].sort((left, right) => {
+    if (left.transitionTime.getTime() !== right.transitionTime.getTime()) {
+      return left.transitionTime.getTime() - right.transitionTime.getTime();
+    }
+    if (left.premiumSellPct !== right.premiumSellPct) {
+      return left.premiumSellPct - right.premiumSellPct;
+    }
+    if (left.spreadPct !== right.spreadPct) return left.spreadPct - right.spreadPct;
+    return right.score - left.score;
+  });
+}
+
+function buildUnsubscribeHeaders(subscriber: {
+  id: string;
+  unsubscribeVersion: number;
+}): Record<string, string> | undefined {
+  const config = loadConfig();
+  if (!config.EMAIL_UNSUBSCRIBE_SECRET) return undefined;
+  const token = createUnsubscribeToken({
+    subscriberId: subscriber.id,
+    version: subscriber.unsubscribeVersion,
+    secret: config.EMAIL_UNSUBSCRIBE_SECRET
+  });
+  const baseUrl = config.PUBLIC_API_BASE_URL.replace(/\/$/, "");
+  return {
+    "List-Unsubscribe": `<${baseUrl}/notifications/unsubscribe/${token}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click"
+  };
 }
 
 type TransitionProduct = {
@@ -127,53 +248,214 @@ type TransitionProduct = {
   }>;
 };
 
-export function selectBuyDcaTransitions(products: TransitionProduct[]): AlertCandidate[] {
-  return products
-    .map((product): AlertCandidate | null => {
-      const metric = product.goldMetrics[0];
-      const currentSignal = product.signalSnapshots[0];
-      const previousSignal = product.signalSnapshots[1];
-      if (
-        !metric ||
-        !currentSignal ||
-        !previousSignal ||
-        metric.time.getTime() !== currentSignal.time.getTime() ||
-        currentSignal.signal !== "BUY_DCA" ||
-        previousSignal.signal === "BUY_DCA"
-      ) {
-        return null;
+type PremiumHistoryPoint = {
+  time: Date | string;
+  premiumSellPct: unknown;
+};
+
+type SnapshotReader = {
+  get(key: string): Promise<string | null>;
+};
+
+function vietnamDate(value: Date): string {
+  return new Date(value.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+function vietnamStartOfToday(now: Date): Date {
+  const vietnamNow = new Date(now.getTime() + VIETNAM_OFFSET_MS);
+  return new Date(
+    Date.UTC(vietnamNow.getUTCFullYear(), vietnamNow.getUTCMonth(), vietnamNow.getUTCDate()) -
+      VIETNAM_OFFSET_MS
+  );
+}
+
+export function findPreviousTradingDayPremium(
+  points: PremiumHistoryPoint[],
+  now: Date
+): number | null {
+  const cutoff = vietnamStartOfToday(now).getTime();
+  const previous = points
+    .map((point) => ({ time: new Date(point.time), premiumSellPct: Number(point.premiumSellPct) }))
+    .filter(
+      (point) =>
+        !Number.isNaN(point.time.getTime()) &&
+        point.time.getTime() < cutoff &&
+        Number.isFinite(point.premiumSellPct)
+    )
+    .sort((left, right) => right.time.getTime() - left.time.getTime())[0];
+  return previous?.premiumSellPct ?? null;
+}
+
+export async function loadPreviousTradingDayPremiumFromSnapshot(
+  redis: SnapshotReader,
+  productCode: string,
+  now: Date,
+  snapshotId?: string
+): Promise<number | null> {
+  try {
+    let effectiveSnapshotId = snapshotId;
+    if (!effectiveSnapshotId) {
+      const pointer = await redis.get("market:snapshot:current");
+      if (!pointer) return null;
+      const parsedPointer = JSON.parse(pointer) as { snapshotId?: unknown };
+      if (typeof parsedPointer.snapshotId !== "string") return null;
+      effectiveSnapshotId = parsedPointer.snapshotId;
+    }
+    const history = await redis.get(
+      `market:snapshot:${effectiveSnapshotId}:product:${productCode}:metrics:history:1y`
+    );
+    if (!history) return null;
+    const parsedHistory = JSON.parse(history);
+    return Array.isArray(parsedHistory) ? findPreviousTradingDayPremium(parsedHistory, now) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function selectPremiumDropAlertEvent(
+  product: TransitionProduct,
+  previousDayPremium: number | null,
+  now: Date
+): AlertEventSelection | null {
+  const metric = product.goldMetrics[0];
+  const signal = product.signalSnapshots[0];
+  if (
+    product.code !== "DOJI_RING_9999" ||
+    !metric ||
+    !signal ||
+    previousDayPremium === null ||
+    !Number.isFinite(previousDayPremium) ||
+    signal.signal !== "BUY_DCA" ||
+    metric.time.getTime() !== signal.time.getTime() ||
+    now.getTime() - metric.time.getTime() > FRESH_METRIC_MS
+  ) {
+    return null;
+  }
+
+  const premiumSellPct = Number(metric.premiumSellPct);
+  if (!Number.isFinite(premiumSellPct)) return null;
+  const level = Math.floor((previousDayPremium - premiumSellPct + 1e-12) / PREMIUM_DROP_STEP);
+  if (level < 1) return null;
+
+  return {
+    code: product.code,
+    name: product.name,
+    brand: product.brand,
+    sellPrice: Number(metric.domesticSellPriceVnd),
+    premiumSellPct,
+    premiumPercentile:
+      metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d),
+    spreadPct: Number(metric.spreadPct),
+    score: Number(signal.score),
+    transitionTime: metric.time,
+    level: "Premium giảm",
+    reasons: Array.isArray(signal.reasons) ? signal.reasons.map(String).slice(0, 3) : [],
+    type: "PREMIUM_DROP",
+    episode: level,
+    fingerprint: `${product.code}:premium-drop:${vietnamDate(metric.time)}:${level}`
+  };
+}
+
+async function findPendingAlertEvents(
+  prisma: PrismaClient,
+  now: Date,
+  redis?: Redis,
+  snapshotId?: string
+): Promise<AlertCandidate[]> {
+  const products = await prisma.goldProduct.findMany({
+    where: { isActive: true },
+    include: {
+      goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+      signalSnapshots: { orderBy: { time: "desc" }, take: 2 }
+    }
+  });
+  for (const product of products) {
+    if (product.code === "DOJI_RING_9999") {
+      const snapshotPremium = redis
+        ? await loadPreviousTradingDayPremiumFromSnapshot(redis, product.code, now, snapshotId)
+        : null;
+      const fallbackPremium =
+        snapshotPremium === null
+          ? await prisma.goldMetric.findFirst({
+              where: { productId: product.id, time: { lt: vietnamStartOfToday(now) } },
+              orderBy: { time: "desc" },
+              select: { premiumSellPct: true }
+            })
+          : null;
+      const premiumSelection = selectPremiumDropAlertEvent(
+        product,
+        snapshotPremium ?? (fallbackPremium ? Number(fallbackPremium.premiumSellPct) : null),
+        now
+      );
+      if (!premiumSelection) continue;
+      await prisma.buyAlertEvent.upsert({
+        where: { fingerprint: premiumSelection.fingerprint },
+        update: {},
+        create: {
+          productId: product.id,
+          episode: premiumSelection.episode,
+          type: premiumSelection.type,
+          fingerprint: premiumSelection.fingerprint,
+          occurredAt: premiumSelection.transitionTime,
+          score: premiumSelection.score,
+          premiumSellPct: premiumSelection.premiumSellPct,
+          spreadPct: premiumSelection.spreadPct,
+          sellPriceVnd: premiumSelection.sellPrice,
+          reasons: premiumSelection.reasons
+        }
+      });
+    }
+  }
+  const events = await prisma.buyAlertEvent.findMany({
+    where: {
+      type: "PREMIUM_DROP",
+      occurredAt: { gte: new Date(now.getTime() - DAY_MS) },
+      product: { isActive: true }
+    },
+    include: {
+      product: {
+        include: {
+          goldMetrics: { orderBy: { time: "desc" }, take: 1 },
+          signalSnapshots: { orderBy: { time: "desc" }, take: 1 }
+        }
       }
-
-      const score = Number(currentSignal.score);
-      const premiumSellPct = Number(metric.premiumSellPct);
-      const premiumPercentile =
-        metric.premiumPercentile180d === null ? null : Number(metric.premiumPercentile180d);
-      const spreadPct = Number(metric.spreadPct);
-
-      return {
-        code: product.code,
-        name: product.name,
-        brand: product.brand,
-        sellPrice: Number(metric.domesticSellPriceVnd),
-        premiumSellPct,
-        premiumPercentile,
-        spreadPct,
-        score,
-        transitionTime: currentSignal.time,
-        level: "Mua dần",
-        reasons: Array.isArray(currentSignal.reasons)
-          ? currentSignal.reasons.map((reason) => String(reason)).slice(0, 3)
-          : []
-      };
+    },
+    orderBy: { occurredAt: "asc" }
+  });
+  const candidates = events
+    .filter((event) => {
+      const metric = event.product.goldMetrics[0];
+      const signal = event.product.signalSnapshots[0];
+      return (
+        metric &&
+        signal &&
+        signal.signal === "BUY_DCA" &&
+        metric.time.getTime() === signal.time.getTime() &&
+        now.getTime() - metric.time.getTime() <= 15 * 60 * 1000
+      );
     })
-    .filter((candidate): candidate is AlertCandidate => candidate !== null)
-    .sort((left, right) => {
-      if (left.premiumSellPct !== right.premiumSellPct) {
-        return left.premiumSellPct - right.premiumSellPct;
-      }
-      if (left.spreadPct !== right.spreadPct) return left.spreadPct - right.spreadPct;
-      return right.score - left.score;
-    });
+    .map((event) =>
+      applyCurrentMetricToAlertCandidate(
+        {
+          eventId: event.id,
+          eventType: event.type,
+          episode: event.episode,
+          code: event.product.code,
+          name: event.product.name,
+          brand: event.product.brand,
+          sellPrice: Number(event.sellPriceVnd),
+          premiumSellPct: Number(event.premiumSellPct),
+          premiumPercentile: null,
+          spreadPct: Number(event.spreadPct),
+          score: Number(event.score),
+          transitionTime: event.occurredAt,
+          level: "Premium giảm" as const,
+          reasons: Array.isArray(event.reasons) ? event.reasons.map(String).slice(0, 3) : []
+        },
+        event.product.goldMetrics[0]!
+      )
+    );
+  return deduplicateAlertCandidates(candidates);
 }
 
 async function createTransporter(): Promise<MailerTransport | null> {
@@ -203,19 +485,20 @@ async function createTransporter(): Promise<MailerTransport | null> {
 
 function buildSubject(candidates: AlertCandidate[]): string {
   return candidates.length > 1
-    ? `VangScore: ${candidates.length} sản phẩm vừa chuyển sang mua dần`
-    : "VangScore: Có sản phẩm vừa chuyển sang mua dần";
+    ? `VangScore: ${candidates.length} cảnh báo premium DOJI mới`
+    : `VangScore: DOJI premium giảm ít nhất ${((candidates[0]?.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`;
 }
 
 function buildText(candidates: AlertCandidate[]): string {
   const lines = [
-    "VangScore phát hiện sản phẩm vừa chuyển sang tín hiệu mua dần.",
+    "VangScore phát hiện premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu đang là BUY_DCA.",
     "",
     ...candidates.flatMap((candidate, index) => [
       `${index + 1}. ${candidate.name} (${candidate.brand})`,
       `Mức: ${candidate.level}`,
       `Giá bán: ${formatVnd(candidate.sellPrice)}`,
       `Premium: ${formatPercent(candidate.premiumSellPct)}`,
+      `Mức giảm premium: ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %`,
       `Spread: ${formatPercent(candidate.spreadPct)}`,
       `VangScore: ${candidate.score}`,
       ""
@@ -237,6 +520,7 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;color:#e2e8f0;font-size:14px;">
               <tr><td style="padding:5px 0;color:#94a3b8;">Giá bán</td><td align="right" style="padding:5px 0;font-weight:700;">${formatVnd(candidate.sellPrice)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">Premium</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.premiumSellPct)}</td></tr>
+              <tr><td style="padding:5px 0;color:#94a3b8;">Mức giảm premium</td><td align="right" style="padding:5px 0;">Ít nhất ${((candidate.episode ?? 1) * 0.5).toLocaleString("vi-VN")} điểm %</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">Spread</td><td align="right" style="padding:5px 0;">${formatPercent(candidate.spreadPct)}</td></tr>
               <tr><td style="padding:5px 0;color:#94a3b8;">VangScore</td><td align="right" style="padding:5px 0;">${candidate.score}</td></tr>
             </table>
@@ -260,8 +544,8 @@ function buildHtml(candidates: AlertCandidate[]): string {
             <tr>
               <td style="padding:28px 28px 18px;">
                 <div style="display:inline-block;padding:7px 10px;border-radius:8px;background:rgba(250,204,21,0.12);color:#facc15;font-size:13px;font-weight:700;">VangScore Alert</div>
-                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">Có tín hiệu mua dần vàng</h1>
-                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Tín hiệu mới nhất vừa chuyển sang BUY_DCA (mua dần).</p>
+                <h1 style="margin:18px 0 10px;color:#ffffff;font-size:24px;line-height:1.25;">Premium DOJI đang giảm</h1>
+                <p style="margin:0;color:#cbd5e1;font-size:15px;line-height:1.7;">Premium DOJI giảm so với ngày giao dịch gần nhất và tín hiệu hiện tại là BUY_DCA.</p>
               </td>
             </tr>
             <tr><td style="padding:0 28px 18px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-spacing:0 12px;">${productCards}</table></td></tr>

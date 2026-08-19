@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Clock3, Database, Gauge, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { HelpTooltip } from "../../components/ui/help-tooltip";
@@ -20,6 +20,7 @@ import {
   toVietnamDateKey,
   type FactorHistoryPoint
 } from "../../lib/factor-history";
+import { loadMarketFactorHistories } from "../../lib/market-factor-history";
 import { cn, formatPercent, formatVnd } from "../../lib/utils";
 import {
   average,
@@ -28,6 +29,7 @@ import {
   getVangDecision
 } from "../../lib/vang-score";
 import { ProductTable } from "./product-table";
+import { subscribeToSummaryStream } from "../../lib/summary-stream";
 
 const SUMMARY_POLL_FALLBACK_MS = 60_000;
 const STALE_AFTER_MS = 20 * 60 * 1000;
@@ -42,6 +44,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   >({});
   const [factorHistoryError, setFactorHistoryError] = useState<ExpandedFactor | null>(null);
   const [factorHistoryLoading, setFactorHistoryLoading] = useState<ExpandedFactor | null>(null);
+  const prefetchedFactorKeyRef = useRef<string | null>(null);
 
   const refreshSummary = useCallback(async () => setSummary(await getMarketSummary()), []);
 
@@ -49,26 +52,24 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
 
   useEffect(() => {
     const streamUrl = getApiUrl("/market/summary/stream");
-    let events: EventSource | null = null;
-    if (new URL(streamUrl, window.location.origin).origin === window.location.origin) {
-      events = new EventSource(streamUrl);
-      events.addEventListener("summary", (event) => {
+    const sameOrigin = new URL(streamUrl, window.location.origin).origin === window.location.origin;
+    const cleanupStream = subscribeToSummaryStream({
+      streamUrl,
+      EventSourceCtor: sameOrigin ? EventSource : null,
+      refreshSummary,
+      onSummary: (event) => {
         try {
           setSummary(JSON.parse(event.data) as MarketSummary);
         } catch {}
-      });
-    }
-    const pollFallback = setInterval(
-      () => void refreshSummary().catch(() => undefined),
-      SUMMARY_POLL_FALLBACK_MS
-    );
+      },
+      fallbackIntervalMs: SUMMARY_POLL_FALLBACK_MS
+    });
     const refreshOnVisible = () => {
       if (document.visibilityState === "visible") void refreshSummary().catch(() => undefined);
     };
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
-      events?.close();
-      clearInterval(pollFallback);
+      cleanupStream();
       document.removeEventListener("visibilitychange", refreshOnVisible);
     };
   }, [refreshSummary]);
@@ -171,6 +172,23 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
     [fetchFactorHistory]
   );
 
+  useEffect(() => {
+    if (!isDataReady || prefetchedFactorKeyRef.current === todayKey) return;
+
+    prefetchedFactorKeyRef.current = todayKey;
+    const timeout = window.setTimeout(() => {
+      void loadMarketFactorHistories({
+        xau: () => fetchFactorHistory("xau"),
+        usd: () => fetchFactorHistory("usd"),
+        dxy: () => fetchFactorHistory("dxy")
+      }).then((histories) => {
+        setFactorHistory((current) => ({ ...histories, ...current }));
+      });
+    }, 900);
+
+    return () => window.clearTimeout(timeout);
+  }, [fetchFactorHistory, isDataReady, todayKey]);
+
   const toggleFactor = (factor: ExpandedFactor) => {
     const next = expandedFactor === factor ? null : factor;
     setExpandedFactor(next);
@@ -180,14 +198,14 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
   return (
     <main id="main-content" tabIndex={-1} className="pb-12">
       <section className="dashboard-visual">
-        <div className="mx-auto max-w-7xl px-4 pb-12 pt-8 text-white md:pb-14 md:pt-12">
+        <div className="mx-auto max-w-7xl px-4 pb-14 pt-7 text-white sm:pb-12 sm:pt-8 md:pb-14 md:pt-12">
           <div className="max-w-4xl">
             <div className="inline-flex items-center gap-2 rounded-md border border-white/[0.12] bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
               <Activity className="h-3.5 w-3.5 text-gold" aria-hidden />
               Dashboard nghiên cứu giá vàng
             </div>
-            <div className="mt-5 flex flex-wrap items-end gap-x-4 gap-y-3">
-              <h1 className="text-4xl font-semibold leading-[0.98] tracking-tight text-foreground md:text-6xl">
+            <div className="mt-5 flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-4">
+              <h1 className="text-[2.15rem] font-semibold leading-[0.98] tracking-[-0.035em] text-foreground sm:text-4xl md:text-6xl">
                 {decision.title}
               </h1>
               <div className="flex items-center gap-2 rounded-md border border-gold/25 bg-gold/[0.08] px-3 py-2">
@@ -251,7 +269,7 @@ export function LiveMarketDashboard({ initialSummary }: { initialSummary: Market
             <CardTitle>Bối cảnh thị trường</CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3 lg:gap-3">
+            <div className="grid grid-cols-3 gap-2 text-sm lg:gap-3">
               <IndicatorFactor
                 label="XAU/USD"
                 value={
@@ -420,13 +438,15 @@ function IndicatorFactor({
       onClick={onToggle}
       aria-expanded={expanded}
       className={cn(
-        "metric-panel min-h-[5.25rem] rounded-md p-2.5 text-left transition duration-200 hover:border-gold/30 hover:bg-white/[0.05] active:scale-[0.98] sm:min-h-[6.25rem] sm:rounded-lg sm:p-3 lg:min-h-[7.25rem]",
+        "metric-panel min-w-0 min-h-[5.75rem] rounded-md p-2 text-left transition duration-200 hover:border-gold/30 hover:bg-white/[0.05] active:scale-[0.98] sm:min-h-[6.25rem] sm:rounded-lg sm:p-3 lg:min-h-[7.25rem]",
         expanded && "border-gold/45 bg-gold/[0.06]"
       )}
     >
-      <div className="text-xs font-medium text-muted">{label}</div>
+      <div className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-muted sm:text-xs sm:normal-case sm:tracking-normal">
+        {label}
+      </div>
       <div
-        className="mt-1.5 truncate text-lg font-semibold tracking-tight text-foreground sm:mt-2 sm:text-xl lg:text-2xl"
+        className="mt-1.5 truncate text-[clamp(0.88rem,4vw,1.125rem)] font-semibold tracking-tight text-foreground sm:mt-2 sm:text-xl lg:text-2xl"
         title={value}
       >
         {value}

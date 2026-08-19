@@ -6,7 +6,7 @@ describe("market summary API client", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the same-origin rewrite and a 60-second server cache for the summary", async () => {
+  it("uses the same-origin rewrite and bypasses server caching for the live summary", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -25,7 +25,7 @@ describe("market summary API client", () => {
     expect(getApiUrl("/market/summary/stream")).toBe("/api/v1/market/summary/stream");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/v1/market/summary",
-      expect.objectContaining({ next: { revalidate: 60 } })
+      expect.objectContaining({ cache: "no-store" })
     );
   });
 });

@@ -2,8 +2,6 @@ import { Module } from "@nestjs/common";
 import { AdminController } from "./modules/admin/admin.controller.js";
 import { AuditService } from "./modules/admin/audit.service.js";
 import { AdminService } from "./modules/admin/admin.service.js";
-import { AccessLogService } from "./modules/telemetry/access-log.service.js";
-import { TelemetryController } from "./modules/telemetry/telemetry.controller.js";
 import { HealthController } from "./modules/health/health.controller.js";
 import { MarketController } from "./modules/market/market.controller.js";
 import { MarketService } from "./modules/market/market.service.js";
@@ -32,8 +30,7 @@ import { RedisService } from "./common/redis.service.js";
     SignalsController,
     MarketController,
     NotificationsController,
-    AdminController,
-    TelemetryController
+    AdminController
   ],
   providers: [
     PrismaService,
@@ -46,8 +43,7 @@ import { RedisService } from "./common/redis.service.js";
     EmailService,
     NotificationsService,
     AdminService,
-    AuditService,
-    AccessLogService
+    AuditService
   ]
 })
 export class AppModule {}

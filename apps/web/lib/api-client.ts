@@ -154,7 +154,7 @@ export function getApiUrl(path: string): string {
 }
 
 export async function getMarketSummary(): Promise<MarketSummary> {
-  return fetchApi<MarketSummary>("/market/summary", { next: { revalidate: 60 } });
+  return fetchApi<MarketSummary>("/market/summary", { cache: "no-store" });
 }
 
 export async function getWorldGoldHistory(days: 7 | 30): Promise<WorldGoldHistoryPoint[]> {

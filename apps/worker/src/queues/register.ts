@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { loadConfig } from "@vang-radar/config";
 import { calculateLatestMetrics } from "../calculators/metrics.js";
 import { sendBuyAlerts } from "../jobs/buy-alerts.js";
-import { refreshMarketSummaryCache } from "../jobs/cache.js";
+import { refreshAndSendBuyAlerts } from "../jobs/market-pipeline.js";
 import {
   fetchDomesticGold,
   fetchFx,
@@ -39,10 +39,10 @@ export function registerQueues(prisma: PrismaClient) {
     "fetch-world-gold": () => fetchWorldGold(prisma),
     "fetch-fx": () => fetchFx(prisma),
     "fetch-macro-indicators": () => fetchMacroIndicators(prisma),
-    "calculate-metrics": () => calculateLatestMetrics(prisma),
+    "calculate-metrics": () => calculateLatestMetrics(prisma, cacheClient),
     "generate-signals": () => generateLatestSignals(prisma),
-    "send-buy-alerts": () => sendBuyAlerts(prisma),
-    "refresh-market-summary-cache": () => refreshMarketSummaryCache(prisma, cacheClient)
+    "send-buy-alerts": () => sendBuyAlerts(prisma, cacheClient),
+    "refresh-market-summary-cache": () => refreshAndSendBuyAlerts(prisma, cacheClient)
   };
 
   const workers = queueNames.map(
@@ -58,40 +58,10 @@ export function registerQueues(prisma: PrismaClient) {
 
 export async function scheduleJobs(queues: Queue[]) {
   const byName = Object.fromEntries(queues.map((queue) => [queue.name, queue]));
-  await byName["fetch-domestic-gold"]?.add(
+  await byName["send-buy-alerts"]?.removeRepeatable(
     "scheduled",
-    {},
-    { repeat: { pattern: "*/5 * * * *" }, jobId: "fetch-domestic-gold" }
-  );
-  await byName["fetch-world-gold"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "*/5 * * * *" }, jobId: "fetch-world-gold" }
-  );
-  await byName["fetch-fx"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "*/5 * * * *" }, jobId: "fetch-fx" }
-  );
-  await byName["fetch-macro-indicators"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "0 * * * *" }, jobId: "fetch-macro-indicators" }
-  );
-  await byName["calculate-metrics"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "*/5 * * * *" }, jobId: "calculate-metrics" }
-  );
-  await byName["generate-signals"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "*/5 * * * *" }, jobId: "generate-signals" }
-  );
-  await byName["send-buy-alerts"]?.add(
-    "scheduled",
-    {},
-    { repeat: { pattern: "2-57/5 * * * *" }, jobId: "send-buy-alerts" }
+    { pattern: "2-57/5 * * * *" },
+    "send-buy-alerts"
   );
   await byName["refresh-market-summary-cache"]?.add(
     "scheduled",

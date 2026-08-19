@@ -1,19 +1,88 @@
 import type { PrismaClient } from "@prisma/client";
+import type { Redis } from "ioredis";
 import {
   calculatePremiumPct,
   calculateSpreadAbsVnd,
   calculateSpreadPct,
   calculateWorldVndPerLuong
 } from "@vang-radar/domain";
+import {
+  calculateDailyPercentile,
+  type DailyPercentilePoint
+} from "./daily-percentile.js";
 import { computeDomesticGoldMomentum, computeWorldGoldMomentum } from "./momentum-lookup.js";
 
-function percentileRank(values: number[], current: number): number | null {
-  if (values.length === 0) return null;
-  const count = values.filter((value) => value <= current).length;
-  return (count / values.length) * 100;
+type MetricHistoryPoint = {
+  time: Date;
+  premiumSellPct: unknown;
+  spreadPct: unknown;
+};
+
+type RedisMetricHistoryPoint = {
+  time?: unknown;
+  premiumSellPct?: unknown;
+  spreadPct?: unknown;
+};
+
+type DailyMetricHistory = {
+  premium: DailyPercentilePoint[];
+  spread: DailyPercentilePoint[];
+};
+
+function parseMetricHistory(points: RedisMetricHistoryPoint[]): DailyMetricHistory {
+  const premium: DailyPercentilePoint[] = [];
+  const spread: DailyPercentilePoint[] = [];
+
+  for (const point of points) {
+    const time = new Date(String(point.time));
+    if (Number.isNaN(time.getTime())) continue;
+
+    const premiumValue = Number(point.premiumSellPct);
+    if (Number.isFinite(premiumValue)) premium.push({ time, value: premiumValue });
+
+    const spreadValue = Number(point.spreadPct);
+    if (Number.isFinite(spreadValue)) spread.push({ time, value: spreadValue });
+  }
+
+  return { premium, spread };
 }
 
-export async function calculateLatestMetrics(prisma: PrismaClient) {
+async function loadDailyMetricHistory(
+  prisma: PrismaClient,
+  redis: Redis | undefined,
+  productId: string,
+  productCode: string,
+  since180d: Date
+): Promise<DailyMetricHistory> {
+  if (redis) {
+    const pointer = await redis.get("market:snapshot:current");
+    if (pointer) {
+      try {
+        const snapshotId = JSON.parse(pointer).snapshotId;
+        if (typeof snapshotId === "string") {
+          const cached = await redis.get(
+            `market:snapshot:${snapshotId}:product:${productCode}:metrics:history:1y`
+          );
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) return parseMetricHistory(parsed);
+          }
+        }
+      } catch {
+        // Fall through to the source of record when the snapshot is malformed or expired.
+      }
+    }
+  }
+
+  const history = await prisma.goldMetric.findMany({
+    where: { productId, time: { gte: since180d } },
+    select: { time: true, premiumSellPct: true, spreadPct: true },
+    orderBy: { time: "asc" }
+  });
+  return parseMetricHistory(history as MetricHistoryPoint[]);
+}
+
+export async function calculateLatestMetrics(prisma: PrismaClient, redis?: Redis) {
   const [world, fx, products] = await Promise.all([
     prisma.worldGoldPrice.findFirst({
       where: {
@@ -59,11 +128,6 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
     });
     if (!domestic) continue;
 
-    const historicalMetrics = await prisma.goldMetric.findMany({
-      where: { productId: product.id, time: { gte: since180d } },
-      orderBy: { time: "asc" },
-      take: 5000
-    });
     const premiumSellPct = calculatePremiumPct(Number(domestic.sellPriceVnd), worldVndPerLuong);
     const premiumBuyPct = calculatePremiumPct(Number(domestic.buyPriceVnd), worldVndPerLuong);
     const spreadAbsVnd = calculateSpreadAbsVnd(
@@ -74,14 +138,19 @@ export async function calculateLatestMetrics(prisma: PrismaClient) {
       Number(domestic.sellPriceVnd),
       Number(domestic.buyPriceVnd)
     );
-    const premiumPercentile180d = percentileRank(
-      historicalMetrics.map((item) => Number(item.premiumSellPct)),
+    const history = await loadDailyMetricHistory(
+      prisma,
+      redis,
+      product.id,
+      product.code,
+      since180d
+    );
+    const premiumPercentile180d = calculateDailyPercentile(
+      history.premium,
+      now,
       premiumSellPct
-    );
-    const spreadPercentile180d = percentileRank(
-      historicalMetrics.map((item) => Number(item.spreadPct)),
-      spreadPct
-    );
+    ).percentile;
+    const spreadPercentile180d = calculateDailyPercentile(history.spread, now, spreadPct).percentile;
 
     const domesticMomentum7d = await computeDomesticGoldMomentum(
       prisma,

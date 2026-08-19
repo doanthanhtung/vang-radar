@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
 import { calculateSpreadPct, calculateWorldVndPerLuong } from "@vang-radar/domain";
-import { hasMockLatestInputs } from "../../common/data-source.js";
+import { hasUsableLatestInputs } from "../../common/data-source.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import { RedisService } from "../../common/redis.service.js";
 import { latestTickByVietnamDay } from "./market-history.util.js";
@@ -239,8 +239,17 @@ export class MarketService {
     @Inject(RedisService) private readonly redis: RedisService
   ) {}
 
+  private async getSnapshotValue<T>(suffix: string): Promise<T | null> {
+    const pointer = await this.redis.getJson<{ snapshotId?: unknown }>("market:snapshot:current");
+    if (typeof pointer?.snapshotId !== "string") return null;
+    return this.redis.getJson<T>(`market:snapshot:${pointer.snapshotId}:${suffix}`);
+  }
+
   async getSummary(): Promise<MarketSummary> {
-    if (await hasMockLatestInputs(this.prisma)) {
+    const snapshot = await this.getSnapshotValue<MarketSummary>("summary");
+    if (snapshot && !hasUnreasonableSummary(snapshot)) return snapshot;
+
+    if (!(await hasUsableLatestInputs(this.prisma))) {
       return {
         time: new Date().toISOString(),
         world: { xauUsdPerOz: 0, usdVnd: 0, worldVndPerLuong: 0, change7d: null },
@@ -473,6 +482,10 @@ export class MarketService {
   }
 
   async getWorldGoldHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; price: number }>>(
+      `market:world-gold:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:world-gold:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; price: number }>>(cacheKey);
     if (cached) return cached;
@@ -496,6 +509,10 @@ export class MarketService {
   }
 
   async getUsdVndHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; rate: number }>>(
+      `market:usd-vnd:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:usd-vnd:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; rate: number }>>(cacheKey);
     if (cached) return cached;
@@ -523,6 +540,10 @@ export class MarketService {
   }
 
   async getDxyHistory(days: number) {
+    const snapshot = await this.getSnapshotValue<Array<{ time: string; value: number }>>(
+      `market:dxy:${days}`
+    );
+    if (snapshot) return snapshot;
     const cacheKey = `market:history:dxy:${days}:v1`;
     const cached = await this.redis.getJson<Array<{ time: string; value: number }>>(cacheKey);
     if (cached) return cached;

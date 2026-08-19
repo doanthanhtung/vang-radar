@@ -291,6 +291,67 @@ function isXauMomentumAcceptableForBuy(
   return xauMomentum.value !== null && xauMomentum.value >= buyThresholds.xauMomentumBuyFloor;
 }
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function calculatePremiumQuality(percentile: number): number {
+  return clamp01(
+    (BUY_THRESHOLDS.premiumPercentileBuy - percentile) / BUY_THRESHOLDS.premiumPercentileBuy
+  );
+}
+
+function calculateSpreadQuality(spreadPct: number): number {
+  return clamp01(
+    (VN_THRESHOLDS.spreadAvoidAbsolute - spreadPct) / (VN_THRESHOLDS.spreadAvoidAbsolute - 0.015)
+  );
+}
+
+function calculateMomentumQuality(momentum: ResolvedMomentum): number {
+  if (momentum.value === null) return 0;
+
+  const value = momentum.value;
+  if (value <= -0.08 || value >= 0.08) return 0;
+  if (value < 0) return (value + 0.08) / 0.08;
+  if (value <= 0.02) return 1;
+  return (0.08 - value) / 0.06;
+}
+
+function calculateHistoryQuality(sampleSize: number): number {
+  return clamp01(sampleSize / IDEAL_PERCENTILE_SAMPLE_SIZE);
+}
+
+function calculateNormalizedBuyDcaScore(
+  premiumPercentile: number,
+  spreadPct: number,
+  xauMomentum: ResolvedMomentum,
+  historySampleSize: number
+): {
+  score: number;
+  premiumQuality: number;
+  spreadQuality: number;
+  momentumQuality: number;
+  historyQuality: number;
+  weightedQuality: number;
+} {
+  const premiumQuality = calculatePremiumQuality(premiumPercentile);
+  const spreadQuality = calculateSpreadQuality(spreadPct);
+  const momentumQuality = calculateMomentumQuality(xauMomentum);
+  const historyQuality = calculateHistoryQuality(historySampleSize);
+  const weightedQuality =
+    0.55 * premiumQuality + 0.25 * spreadQuality + 0.1 * momentumQuality + 0.1 * historyQuality;
+  const score = Math.max(65, Math.min(100, Math.round(65 + 35 * weightedQuality)));
+
+  return {
+    score,
+    premiumQuality,
+    spreadQuality,
+    momentumQuality,
+    historyQuality,
+    weightedQuality
+  };
+}
+
 function evaluateBuyDcaRule(
   input: SignalInput,
   premiumPercentile: number,
@@ -349,14 +410,52 @@ function evaluateBuyDcaRule(
     65 + Math.min(15, (buyThresholds.premiumPercentileBuy - premiumPercentile) / 2);
   const spreadAdjustment = calculateSpreadAdjustment(input.spreadPct);
   const adjustedScore = Math.max(0, Math.min(100, Math.round(premiumBaseScore + spreadAdjustment)));
+  const normalizedScore = calculateNormalizedBuyDcaScore(
+    premiumPercentile,
+    input.spreadPct,
+    xauMomentum,
+    premiumHistory.sampleSize
+  );
   conditions.push({
     label: "Điểm sau điều chỉnh spread",
     actual: `${adjustedScore}/100`,
     requirement: "≥ 65/100",
     passed: adjustedScore >= 65
   });
+  conditions.push(
+    {
+      label: "Chất lượng premium",
+      actual: formatPercent(normalizedScore.premiumQuality),
+      requirement: "Cao khi premium percentile tiến về 0%",
+      passed: true
+    },
+    {
+      label: "Chất lượng spread",
+      actual: formatPercent(normalizedScore.spreadQuality),
+      requirement: "Tối đa khi spread ≤ 1,50%",
+      passed: true
+    },
+    {
+      label: "Chất lượng momentum XAU",
+      actual: formatPercent(normalizedScore.momentumQuality),
+      requirement: "Tối đa khi momentum nằm trong khoảng 0%–2%",
+      passed: true
+    },
+    {
+      label: "Độ tin cậy lịch sử",
+      actual: formatPercent(normalizedScore.historyQuality),
+      requirement: `Tối đa khi có ≥ ${IDEAL_PERCENTILE_SAMPLE_SIZE} mẫu daily`,
+      passed: true
+    },
+    {
+      label: "Điểm BUY_DCA chuẩn hóa",
+      actual: `${normalizedScore.score}/100`,
+      requirement: "65–100/100",
+      passed: true
+    }
+  );
   const matched = conditions.every((condition) => condition.passed);
-  const score = matched ? adjustedScore : null;
+  const score = matched ? normalizedScore.score : null;
 
   return {
     id: "BUY_DCA",
@@ -365,7 +464,7 @@ function evaluateBuyDcaRule(
     matched,
     score,
     scoreFormula: matched
-      ? `Điểm = round(${premiumBaseScore.toFixed(2)} + điều chỉnh spread ${spreadAdjustment.toFixed(2)}) = ${score}`
+      ? `Điểm = round(65 + 35 × (premium ${formatPercent(normalizedScore.premiumQuality)} × 55% + spread ${formatPercent(normalizedScore.spreadQuality)} × 25% + momentum ${formatPercent(normalizedScore.momentumQuality)} × 10% + lịch sử ${formatPercent(normalizedScore.historyQuality)} × 10%)) = ${score}`
       : null,
     conditions
   };

@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import type { MetricPoint } from "../../lib/api-client";
 import { formatNumber, formatPercent, formatVnd } from "../../lib/utils";
+import { groupMetricHistoryByVietnameseDay } from "./metric-history-stats";
 
 type ChartPoint = {
   time: string;
@@ -122,6 +123,16 @@ function percentileRank(values: number[], value: number): number {
   return Math.round((lowerOrEqual / values.length) * 100);
 }
 
+export function formatHistoryPosition(percentile: number): string {
+  if (percentile >= 45 && percentile <= 55) {
+    return "Gần mức thường gặp";
+  }
+  if (percentile < 50) {
+    return `Thấp hơn ${100 - percentile}% số ngày`;
+  }
+  return `Cao hơn ${percentile}% số ngày`;
+}
+
 function getPercentStats(points: ChartPoint[], key: "premium" | "spread") {
   const values = points.map((point) => point[key]);
   const latest = values[values.length - 1] ?? 0;
@@ -141,7 +152,9 @@ export function MetricCharts({
   summaryLabel: string;
   expectedDays: number;
 }) {
-  const points = data.map(toPoint).filter((point): point is ChartPoint => point !== null);
+  const points = groupMetricHistoryByVietnameseDay(data)
+    .map(toPoint)
+    .filter((point): point is ChartPoint => point !== null);
   const latest = points[points.length - 1];
 
   if (!latest) {
@@ -159,6 +172,10 @@ export function MetricCharts({
   const priceChange = getChange(points, "sell");
   const premiumStats = getPercentStats(points, "premium");
   const spreadStats = getPercentStats(points, "spread");
+  const spreadAmounts = points
+    .map((point) => point.spreadAbs)
+    .filter((value): value is number => value !== null);
+  const typicalSpreadAmount = spreadAmounts.length ? quantile(spreadAmounts, 0.5) : null;
 
   return (
     <div className="space-y-3 sm:space-y-4">
@@ -169,6 +186,7 @@ export function MetricCharts({
         premiumStats={premiumStats}
         spreadStats={spreadStats}
         currentSpreadAmount={latest.spreadAbs}
+        typicalSpreadAmount={typicalSpreadAmount}
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-panel shadow-panel">
@@ -389,7 +407,8 @@ function HistorySummaryTable({
   expectedDays,
   premiumStats,
   spreadStats,
-  currentSpreadAmount
+  currentSpreadAmount,
+  typicalSpreadAmount
 }: {
   days: number;
   summaryLabel: string;
@@ -397,6 +416,7 @@ function HistorySummaryTable({
   premiumStats: ReturnType<typeof getPercentStats>;
   spreadStats: ReturnType<typeof getPercentStats>;
   currentSpreadAmount: number | null;
+  typicalSpreadAmount: number | null;
 }) {
   const premiumDifference = premiumStats.latest - premiumStats.median;
   const spreadDifference = spreadStats.latest - spreadStats.median;
@@ -405,7 +425,7 @@ function HistorySummaryTable({
       label: "Premium",
       current: formatPercent(premiumStats.latest),
       typical: formatPercent(premiumStats.median),
-      position: `Cao hơn ${premiumStats.percentile}% số ngày`,
+      position: formatHistoryPosition(premiumStats.percentile),
       difference: formatMedianDifference(premiumDifference),
       accent: premiumDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh so với vàng thế giới quy đổi"
@@ -418,8 +438,11 @@ function HistorySummaryTable({
           : formatVnd(currentSpreadAmount),
       currentMeta: currentSpreadAmount === null ? undefined : formatPercent(spreadStats.latest),
       typical: formatPercent(spreadStats.median),
-      position: `Cao hơn ${spreadStats.percentile}% số ngày`,
-      difference: formatMedianDifference(spreadDifference),
+      position: formatHistoryPosition(spreadStats.percentile),
+      difference:
+        currentSpreadAmount === null || typicalSpreadAmount === null
+          ? formatMedianDifference(spreadDifference)
+          : formatSpreadDifference(currentSpreadAmount - typicalSpreadAmount),
       accent: spreadDifference > 0 ? "text-warning" : "text-positive",
       note: "Chênh giữa giá mua và giá bán"
     }
@@ -444,8 +467,8 @@ function HistorySummaryTable({
               <th className="w-[18%] px-5 py-3 font-medium">Chỉ số</th>
               <th className="w-[16%] px-5 py-3 font-medium">Hiện tại</th>
               <th className="w-[18%] px-5 py-3 font-medium">Mức thường gặp</th>
-              <th className="w-[22%] px-5 py-3 font-medium">Vị trí lịch sử</th>
-              <th className="w-[26%] px-5 py-3 font-medium">So với lịch sử</th>
+              <th className="w-[22%] px-5 py-3 font-medium">Giá hiện tại đang ở mức nào?</th>
+              <th className="w-[26%] px-5 py-3 font-medium">So với mức thường gặp</th>
             </tr>
           </thead>
           <tbody>
@@ -496,11 +519,11 @@ function HistorySummaryTable({
                 <dd className="mt-1 font-medium text-foreground">{row.typical}</dd>
               </div>
               <div className="rounded-md bg-background/30 px-2 py-1.5">
-                <dt className="text-[10px] text-muted">Vị trí</dt>
+                <dt className="text-[10px] text-muted">Đang ở mức nào?</dt>
                 <dd className="mt-1 font-medium text-foreground">{row.position}</dd>
               </div>
               <div className="rounded-md bg-background/30 px-2 py-1.5">
-                <dt className="text-[10px] text-muted">So với lịch sử</dt>
+                <dt className="text-[10px] text-muted">So với mức thường gặp</dt>
                 <dd className="mt-1 font-medium text-foreground">{row.difference}</dd>
               </div>
             </dl>
@@ -603,4 +626,10 @@ function formatMedianDifference(value: number): string {
   if (Math.abs(value) < 0.0005) return "Gần mức thường gặp";
   const direction = value > 0 ? "Cao hơn" : "Thấp hơn";
   return `${direction} ${formatNumber(Math.abs(value) * 100)} điểm %`;
+}
+
+export function formatSpreadDifference(value: number): string {
+  if (Math.abs(value) < 0.5) return "Gần mức thường gặp";
+  const direction = value > 0 ? "Cao hơn" : "Thấp hơn";
+  return `${direction} ${formatVnd(Math.abs(value))}`;
 }

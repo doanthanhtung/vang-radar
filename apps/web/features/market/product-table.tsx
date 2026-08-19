@@ -31,11 +31,12 @@ export function ProductTable({ products }: { products: MarketSummaryProduct[]; a
 
   return (
     <>
-      <div className="space-y-2.5 md:hidden">
+      <div className="space-y-3 md:hidden">
         {rankedProducts.map((product) => (
           <article key={product.code} className="research-card overflow-hidden rounded-lg">
             <Link
               href={`/gold/${product.code}`}
+              prefetch={false}
               aria-label={`Phân tích 180 ngày ${product.name}`}
               className="block w-full p-3.5 text-left transition duration-200 hover:bg-white/[0.04] active:scale-[0.995]"
             >
@@ -122,6 +123,7 @@ function ProductRow({
       <Td>
         <Link
           href={`/gold/${product.code}`}
+          prefetch={false}
           onClick={(event) => {
             event.stopPropagation();
           }}

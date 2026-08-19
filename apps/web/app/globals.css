@@ -114,6 +114,21 @@ a {
   position: relative;
 }
 
+@media (max-width: 639px) {
+  .dashboard-visual {
+    background-position: 58% center;
+  }
+
+  .dashboard-visual::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 8rem;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, rgba(11, 18, 32, 0.94));
+  }
+}
+
 .help-popover {
   position: fixed;
   z-index: 50;
