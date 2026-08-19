@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculateDailyPercentile } from "../src/calculators/daily-percentile.js";
+import {
+  calculateDailyPercentile,
+  countCompletedVietnamDays
+} from "../src/calculators/daily-percentile.js";
 
 describe("calculateDailyPercentile", () => {
   it("uses the latest observation from each of the 180 completed Vietnam days", () => {
@@ -31,5 +34,17 @@ describe("calculateDailyPercentile", () => {
       percentile: 0,
       sampleSize: 180
     });
+  });
+
+  it("counts distinct completed Vietnam days instead of raw intraday rows", () => {
+    const currentTime = new Date("2026-08-10T01:00:00.000Z");
+    const points = [
+      { time: new Date("2026-08-08T02:00:00.000Z") },
+      { time: new Date("2026-08-08T09:00:00.000Z") },
+      { time: new Date("2026-08-09T09:30:00.000Z") },
+      { time: new Date("2026-08-10T00:30:00.000Z") }
+    ];
+
+    expect(countCompletedVietnamDays(points, currentTime)).toBe(2);
   });
 });

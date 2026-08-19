@@ -111,6 +111,29 @@ describe("buildScoreExplanation", () => {
     expect(explanation.algorithm?.output.score).toBe(explanation.score);
   });
 
+  it("surfaces the normalized 100-point BUY_DCA score in the web explanation", () => {
+    const explanation = buildScoreExplanation({
+      ...doji,
+      premiumSellPct: 0.02,
+      premiumPercentile180d: 0,
+      spreadPct: 0.015,
+      historySampleSize180d: 30,
+      xauMomentum30d: 0.01
+    });
+
+    expect(explanation.signal).toBe("BUY_DCA");
+    expect(explanation.score).toBe(100);
+    expect(explanation.summary).toContain("100/100");
+    expect(explanation.algorithm?.rules.find((rule) => rule.id === "BUY_DCA")?.conditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Chất lượng premium" }),
+        expect.objectContaining({ label: "Chất lượng spread" }),
+        expect.objectContaining({ label: "Chất lượng momentum XAU" }),
+        expect.objectContaining({ label: "Độ tin cậy lịch sử" })
+      ])
+    );
+  });
+
   it("returns empty explanation when DOJI data is unavailable", () => {
     const explanation = buildScoreExplanation(null);
 

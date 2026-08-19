@@ -10,6 +10,22 @@ function vietnamDate(time: Date): string {
   return new Date(time.getTime() + VIETNAM_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+export function countCompletedVietnamDays(
+  points: Array<{ time: Date }>,
+  currentTime: Date
+): number {
+  const currentDate = vietnamDate(currentTime);
+  const dates = new Set<string>();
+
+  for (const point of points) {
+    if (Number.isNaN(point.time.getTime())) continue;
+    const date = vietnamDate(point.time);
+    if (date < currentDate) dates.add(date);
+  }
+
+  return Math.min(dates.size, HISTORY_DAYS);
+}
+
 export function calculateDailyPercentile(
   history: DailyPercentilePoint[],
   currentTime: Date,

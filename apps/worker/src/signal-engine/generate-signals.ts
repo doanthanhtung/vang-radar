@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { calculateSpreadPct, generateDecisionSignal, type ProductCode } from "@vang-radar/domain";
+import { countCompletedVietnamDays } from "../calculators/daily-percentile.js";
 
 export async function generateLatestSignals(prisma: PrismaClient) {
   const products = await prisma.goldProduct.findMany({ where: { isActive: true } });
@@ -17,12 +18,14 @@ export async function generateLatestSignals(prisma: PrismaClient) {
     const spreadPct = calculateSpreadPct(sellPrice, buyPrice);
 
     const since180d = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
-    const historicalMetricCount = await prisma.goldMetric.count({
+    const historicalMetrics = await prisma.goldMetric.findMany({
       where: {
         productId: product.id,
         time: { gte: since180d, lt: metric.time }
-      }
+      },
+      select: { time: true }
     });
+    const historicalMetricCount = countCompletedVietnamDays(historicalMetrics, metric.time);
 
     const output = generateDecisionSignal({
       productCode: product.code as ProductCode,

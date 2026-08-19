@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Redis } from "ioredis";
 import { calculateSpreadPct, calculateWorldVndPerLuong } from "@vang-radar/domain";
+import { countCompletedVietnamDays } from "../calculators/daily-percentile.js";
 
 const SNAPSHOT_POINTER_KEY = "market:snapshot:current";
 const SNAPSHOT_TTL_SECONDS = 24 * 60 * 60;
@@ -109,7 +110,10 @@ export function metricHistory(points: Array<Record<string, unknown> & { time: Da
     }));
 }
 
-export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis): Promise<string | null> {
+export async function publishMarketSnapshot(
+  prisma: PrismaClient,
+  redis: Redis
+): Promise<string | null> {
   const [latestFx, latestWorld, latestDxy, products] = await Promise.all([
     prisma.fxRate.findFirst({
       where: {
@@ -161,7 +165,13 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
       },
       orderBy: { time: "desc" }
     });
-    if (!metric || !signal || !domestic || metric.time.getTime() !== snapshotTime.getTime() || signal.time.getTime() !== metric.time.getTime()) {
+    if (
+      !metric ||
+      !signal ||
+      !domestic ||
+      metric.time.getTime() !== snapshotTime.getTime() ||
+      signal.time.getTime() !== metric.time.getTime()
+    ) {
       return null;
     }
     const buyPrice = numberValue(metric.domesticBuyPriceVnd);
@@ -176,19 +186,22 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
   );
   const historySampleSizes = new Map(
     await Promise.all(
-      productRows.map(async ({ product, metric }) =>
-        [
-          product.id,
-          metricHistory(
-            (await prisma.goldMetric.findMany({
-              where: {
-                productId: product.id,
-                time: { gte: new Date(Date.now() - 180 * 86_400_000), lt: metric.time }
-              },
-              orderBy: { time: "asc" }
-            })) as never
-          ).length
-        ] as const
+      productRows.map(
+        async ({ product, metric }) =>
+          [
+            product.id,
+            countCompletedVietnamDays(
+              (await prisma.goldMetric.findMany({
+                where: {
+                  productId: product.id,
+                  time: { gte: new Date(Date.now() - 180 * 86_400_000), lt: metric.time }
+                },
+                select: { time: true },
+                orderBy: { time: "asc" }
+              })) as Array<{ time: Date }>,
+              metric.time
+            )
+          ] as const
       )
     )
   );
@@ -270,36 +283,89 @@ export async function publishMarketSnapshot(prisma: PrismaClient, redis: Redis):
   };
 
   const transaction = redis.multi();
-  transaction.set(snapshotKey(snapshotId, "summary"), JSON.stringify(summary), "EX", SNAPSHOT_TTL_SECONDS);
+  transaction.set(
+    snapshotKey(snapshotId, "summary"),
+    JSON.stringify(summary),
+    "EX",
+    SNAPSHOT_TTL_SECONDS
+  );
   for (const { product, metric, signal } of productRows) {
-    transaction.set(snapshotKey(snapshotId, `product:${product.code}:metric`), JSON.stringify(metric), "EX", SNAPSHOT_TTL_SECONDS);
-    transaction.set(snapshotKey(snapshotId, `product:${product.code}:signal`), JSON.stringify(signal), "EX", SNAPSHOT_TTL_SECONDS);
+    transaction.set(
+      snapshotKey(snapshotId, `product:${product.code}:metric`),
+      JSON.stringify(metric),
+      "EX",
+      SNAPSHOT_TTL_SECONDS
+    );
+    transaction.set(
+      snapshotKey(snapshotId, `product:${product.code}:signal`),
+      JSON.stringify(signal),
+      "EX",
+      SNAPSHOT_TTL_SECONDS
+    );
 
     for (const range of HISTORY_RANGES) {
       const rows = await prisma.goldMetric.findMany({
         where: { productId: product.id, time: { gte: rangeStart(range) } },
         orderBy: { time: "asc" }
       });
-      transaction.set(snapshotKey(snapshotId, `product:${product.code}:metrics:history:${range}`), JSON.stringify(metricHistory(rows as never)), "EX", SNAPSHOT_TTL_SECONDS);
+      transaction.set(
+        snapshotKey(snapshotId, `product:${product.code}:metrics:history:${range}`),
+        JSON.stringify(metricHistory(rows as never)),
+        "EX",
+        SNAPSHOT_TTL_SECONDS
+      );
     }
-
   }
 
   for (const days of MARKET_HISTORY_DAYS) {
     const since = new Date(Date.now() - days * 86_400_000);
     const [world, fx, dxy] = await Promise.all([
-      prisma.worldGoldPrice.findMany({ where: { isValid: true, symbol: "XAUUSD", time: { gte: since } }, orderBy: { time: "asc" } }),
-      prisma.fxRate.findMany({ where: { isValid: true, pair: "USDVND", time: { gte: since } }, orderBy: { time: "asc" } }),
-      prisma.macroIndicator.findMany({ where: { isValid: true, code: "DXY", time: { gte: since } }, orderBy: { time: "asc" } })
+      prisma.worldGoldPrice.findMany({
+        where: { isValid: true, symbol: "XAUUSD", time: { gte: since } },
+        orderBy: { time: "asc" }
+      }),
+      prisma.fxRate.findMany({
+        where: { isValid: true, pair: "USDVND", time: { gte: since } },
+        orderBy: { time: "asc" }
+      }),
+      prisma.macroIndicator.findMany({
+        where: { isValid: true, code: "DXY", time: { gte: since } },
+        orderBy: { time: "asc" }
+      })
     ]);
-    transaction.set(snapshotKey(snapshotId, `market:world-gold:${days}`), JSON.stringify(latestByVietnamDay(world, (point) => numberValue(point.priceUsdPerOz)).map(({ time, value }) => ({ time, price: value }))), "EX", SNAPSHOT_TTL_SECONDS);
-    transaction.set(snapshotKey(snapshotId, `market:usd-vnd:${days}`), JSON.stringify(latestByVietnamDay(fx, (point) => numberValue(point.rate)).map(({ time, value }) => ({ time, rate: value }))), "EX", SNAPSHOT_TTL_SECONDS);
-    transaction.set(snapshotKey(snapshotId, `market:dxy:${days}`), JSON.stringify(latestByVietnamDay(dxy, (point) => numberValue(point.value))), "EX", SNAPSHOT_TTL_SECONDS);
+    transaction.set(
+      snapshotKey(snapshotId, `market:world-gold:${days}`),
+      JSON.stringify(
+        latestByVietnamDay(world, (point) => numberValue(point.priceUsdPerOz)).map(
+          ({ time, value }) => ({ time, price: value })
+        )
+      ),
+      "EX",
+      SNAPSHOT_TTL_SECONDS
+    );
+    transaction.set(
+      snapshotKey(snapshotId, `market:usd-vnd:${days}`),
+      JSON.stringify(
+        latestByVietnamDay(fx, (point) => numberValue(point.rate)).map(({ time, value }) => ({
+          time,
+          rate: value
+        }))
+      ),
+      "EX",
+      SNAPSHOT_TTL_SECONDS
+    );
+    transaction.set(
+      snapshotKey(snapshotId, `market:dxy:${days}`),
+      JSON.stringify(latestByVietnamDay(dxy, (point) => numberValue(point.value))),
+      "EX",
+      SNAPSHOT_TTL_SECONDS
+    );
   }
 
   transaction.set(SNAPSHOT_POINTER_KEY, JSON.stringify({ snapshotId }), "EX", SNAPSHOT_TTL_SECONDS);
   const result = await transaction.exec();
-  if (!result || result.some(([error]) => error)) throw new Error("Failed to publish market snapshot");
+  if (!result || result.some(([error]) => error))
+    throw new Error("Failed to publish market snapshot");
   await cleanupStaleMarketSnapshots(redis, snapshotId);
   return snapshotId;
 }

@@ -64,7 +64,70 @@ describe("generateDecisionSignal", () => {
     });
     expect(result.signal).toBe("BUY_DCA");
     expect(result.score).toBeGreaterThanOrEqual(65);
-    expect(result.score).toBeLessThanOrEqual(80);
+    expect(result.score).toBeLessThanOrEqual(100);
+  });
+
+  it("reaches 100 for an ideal Vietnamese gold accumulation setup", () => {
+    const result = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.02,
+      premiumPercentile180d: 0,
+      spreadPct: 0.015,
+      spreadPercentile180d: 50,
+      premiumSampleSize180d: 30,
+      spreadSampleSize180d: 30,
+      xauMomentum30d: 0.01
+    });
+
+    expect(result.signal).toBe("BUY_DCA");
+    expect(result.score).toBe(100);
+  });
+
+  it("requires a full 30-day history sample to reach the normalized maximum", () => {
+    const fifteenDayHistory = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.02,
+      premiumPercentile180d: 0,
+      spreadPct: 0.015,
+      spreadPercentile180d: 50,
+      premiumSampleSize180d: 15,
+      spreadSampleSize180d: 15,
+      xauMomentum30d: 0.01
+    });
+    const thirtyDayHistory = generateDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.02,
+      premiumPercentile180d: 0,
+      spreadPct: 0.015,
+      spreadPercentile180d: 50,
+      premiumSampleSize180d: 30,
+      spreadSampleSize180d: 30,
+      xauMomentum30d: 0.01
+    });
+
+    expect(fifteenDayHistory.signal).toBe("BUY_DCA");
+    expect(fifteenDayHistory.score).toBeLessThan(100);
+    expect(thirtyDayHistory.score).toBe(100);
+  });
+
+  it("rewards stable momentum more than falling or overheated momentum", () => {
+    const scores = [-0.08, 0, 0.01, 0.02, 0.08].map(
+      (xauMomentum30d) =>
+        generateDecisionSignal({
+          ...baseInput,
+          premiumSellPct: 0.02,
+          premiumPercentile180d: 0,
+          spreadPct: 0.015,
+          premiumSampleSize180d: 30,
+          spreadSampleSize180d: 30,
+          xauMomentum30d
+        }).score
+    );
+
+    expect(scores[0]).toBeLessThan(scores[1]!);
+    expect(scores[1]).toBe(scores[2]);
+    expect(scores[2]).toBe(scores[3]);
+    expect(scores[3]).toBeGreaterThan(scores[4]!);
   });
 
   it.each(["SJC_BAR", "DOJI_RING_9999"] as const)(
@@ -152,7 +215,8 @@ describe("generateDecisionSignal", () => {
         }).score
     );
 
-    expect(scores).toEqual([75, 73, 70, 63]);
+    expect(scores.slice(0, 3)).toEqual([98, 97, 95]);
+    expect(scores[3]).toBe(63);
   });
 
   it("keeps BUY_DCA at 3% spread when exceptional premium absorbs the penalty", () => {
@@ -166,7 +230,7 @@ describe("generateDecisionSignal", () => {
     });
 
     expect(result.signal).toBe("BUY_DCA");
-    expect(result.score).toBe(70);
+    expect(result.score).toBe(95);
   });
 
   it("falls back to HOLD when spread pulls the adjusted BUY_DCA score below 65", () => {
@@ -317,14 +381,15 @@ describe("generateDecisionSignal", () => {
   });
 
   it("reduces HOLD scores gradually as spread rises above 3%", () => {
-    const scores = [0.03, 0.032, 0.035, 0.039].map((spreadPct) =>
-      generateDecisionSignal({
-        ...baseInput,
-        premiumSellPct: 0.1,
-        premiumPercentile180d: 50,
-        spreadPct,
-        domesticMomentum7d: 0.01
-      }).score
+    const scores = [0.03, 0.032, 0.035, 0.039].map(
+      (spreadPct) =>
+        generateDecisionSignal({
+          ...baseInput,
+          premiumSellPct: 0.1,
+          premiumPercentile180d: 50,
+          spreadPct,
+          domesticMomentum7d: 0.01
+        }).score
     );
 
     expect(scores).toEqual([53, 52, 51, 49]);
@@ -396,6 +461,31 @@ describe("explainDecisionSignal", () => {
     expect(explanation.rules.map((rule) => rule.id)).toEqual(["AVOID", "BUY_DCA"]);
     expect(explanation.rules[0]?.matched).toBe(false);
     expect(explanation.rules[1]?.matched).toBe(true);
+  });
+
+  it("explains every normalized BUY_DCA score component", () => {
+    const explanation = explainDecisionSignal({
+      ...baseInput,
+      premiumSellPct: 0.02,
+      premiumPercentile180d: 0,
+      spreadPct: 0.015,
+      premiumSampleSize180d: 30,
+      spreadSampleSize180d: 30,
+      xauMomentum30d: 0.01
+    });
+
+    const buyDcaRule = explanation.rules.find((rule) => rule.id === "BUY_DCA");
+    expect(explanation.output.score).toBe(100);
+    expect(buyDcaRule?.scoreFormula).toContain("round(65 + 35");
+    expect(buyDcaRule?.conditions.map((condition) => condition.label)).toEqual(
+      expect.arrayContaining([
+        "Chất lượng premium",
+        "Chất lượng spread",
+        "Chất lượng momentum XAU",
+        "Độ tin cậy lịch sử",
+        "Điểm BUY_DCA chuẩn hóa"
+      ])
+    );
   });
 
   it("marks failed conditions on non-matching rules", () => {
